@@ -11,6 +11,15 @@ const eventClients = new Set();
 const defaultState = {
   sessions: [],
   settings: { workspaceName: 'Dev workspace', notifications: true, sessionPersistence: true, theme: 'light' },
+  organization: {
+    id: 'org-cloudos-demo',
+    name: 'CloudOS Demo Organization',
+    plan: 'Business preview',
+    members: [
+      { id: 'member-dev', name: 'Dev User', email: 'demo@cloudos.local', role: 'owner', status: 'active', joinedAt: '2026-09-01T09:00:00.000Z' }
+    ]
+  },
+  auditLogs: [],
   files: [
     { id: 'welcome', name: 'Welcome.txt', type: 'text', size: '1 KB', updated: 'Just now', content: 'Welcome to your CloudOS workspace.\n' },
     { id: 'projects', name: 'Projects', type: 'folder', size: '--', updated: 'Today' },
@@ -29,6 +38,9 @@ function loadState() {
 let state = loadState();
 state.sessions = Array.isArray(state.sessions) ? state.sessions : [];
 state.settings = { ...defaultState.settings, ...(state.settings || {}) };
+state.organization = { ...defaultState.organization, ...(state.organization || {}) };
+state.organization.members = Array.isArray(state.organization.members) ? state.organization.members : structuredClone(defaultState.organization.members);
+state.auditLogs = Array.isArray(state.auditLogs) ? state.auditLogs : [];
 state.files = Array.isArray(state.files) ? state.files.map((file) => ({ ...file, content: file.content || '' })) : structuredClone(defaultState.files);
 
 function saveState() {
@@ -60,6 +72,13 @@ function readBody(request, callback) {
 
 function findFile(fileId) {
   return state.files.find((file) => file.id === fileId);
+}
+
+function recordAudit(action, actor = 'demo@cloudos.local', details = '') {
+  const entry = { id: randomUUID(), action, actor, details, createdAt: new Date().toISOString() };
+  state.auditLogs.unshift(entry);
+  state.auditLogs = state.auditLogs.slice(0, 100);
+  broadcast('audit_created', entry);
 }
 
 function serveFile(response, pathname) {
@@ -112,10 +131,11 @@ const server = http.createServer((request, response) => {
 
   if (request.method === 'POST' && requestUrl.pathname === '/api/sessions') {
     const requestedId = requestUrl.searchParams.get('id');
+    const requestedUser = requestUrl.searchParams.get('email') || 'demo@cloudos.local';
     const existingSession = state.sessions.find((session) => session.id === requestedId);
     const session = existingSession || {
       id: randomUUID(),
-      user: 'demo@cloudos.local',
+      user: requestedUser,
       status: 'running',
       host: 'local-dev',
       startedAt: new Date().toISOString(),
@@ -124,9 +144,60 @@ const server = http.createServer((request, response) => {
     session.status = 'running';
     session.lastConnectedAt = new Date().toISOString();
     if (!existingSession) state.sessions.push(session);
+    const member = state.organization.members.find((item) => item.email === session.user);
+    if (!member) {
+      state.organization.members.push({ id: randomUUID(), name: session.user.split('@')[0], email: session.user, role: 'member', status: 'active', joinedAt: new Date().toISOString() });
+    }
+    recordAudit(existingSession ? 'Session resumed' : 'Session started', session.user, `Connected to ${session.host}`);
     saveState();
     broadcast('session', session);
     sendJson(response, 201, session);
+    return;
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname === '/api/me') {
+    const email = requestUrl.searchParams.get('email') || 'demo@cloudos.local';
+    const member = state.organization.members.find((item) => item.email === email) || state.organization.members[0];
+    sendJson(response, 200, { user: member, organizationId: state.organization.id });
+    return;
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname === '/api/organization') {
+    sendJson(response, 200, state.organization);
+    return;
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname === '/api/admin/summary') {
+    const activeSessions = state.sessions.filter((session) => session.status === 'running').length;
+    const storageBytes = state.files.reduce((total, file) => total + Buffer.byteLength(file.content || ''), 0);
+    sendJson(response, 200, {
+      organization: state.organization,
+      metrics: { users: state.organization.members.length, activeUsers: activeSessions, cloudPcs: activeSessions, storageBytes, auditEvents: state.auditLogs.length },
+      sessions: state.sessions.map((session) => ({ id: session.id, user: session.user, status: session.status, host: session.host, lastConnectedAt: session.lastConnectedAt }))
+    });
+    return;
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname === '/api/audit') {
+    sendJson(response, 200, { events: state.auditLogs.slice(0, 30) });
+    return;
+  }
+
+  if (request.method === 'POST' && requestUrl.pathname === '/api/organization/members') {
+    readBody(request, (error, payload) => {
+      if (error) { sendJson(response, 400, { error: error.message }); return; }
+      const email = String(payload.email || '').trim().toLowerCase();
+      const name = String(payload.name || '').trim();
+      const role = ['owner', 'admin', 'member', 'viewer'].includes(payload.role) ? payload.role : 'member';
+      if (!email || !name || !email.includes('@')) { sendJson(response, 400, { error: 'Name and valid email are required' }); return; }
+      if (state.organization.members.some((member) => member.email === email)) { sendJson(response, 409, { error: 'Member already exists' }); return; }
+      const member = { id: randomUUID(), name, email, role, status: 'invited', joinedAt: new Date().toISOString() };
+      state.organization.members.push(member);
+      recordAudit('Member invited', 'demo@cloudos.local', `${email} as ${role}`);
+      saveState();
+      broadcast('organization_updated', state.organization);
+      sendJson(response, 201, member);
+    });
     return;
   }
 

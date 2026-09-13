@@ -26,12 +26,15 @@ const viewCopy = {
   files: { title: 'Your files.', eyebrow: 'FILES', secondaryTitle: 'My files', description: 'Persistent storage for your cloud workspace.' },
   apps: { title: 'Your toolkit.', eyebrow: 'APPLICATIONS', secondaryTitle: 'Applications', description: 'Tools ready to run inside your cloud workspace.' },
   activity: { title: 'A clear trail.', eyebrow: 'ACTIVITY', secondaryTitle: 'Recent activity', description: 'A simple record of what changed in your workspace.' },
-  settings: { title: 'Make it yours.', eyebrow: 'PREFERENCES', secondaryTitle: 'Settings', description: 'Workspace preferences will live here as the platform grows.' }
+  settings: { title: 'Make it yours.', eyebrow: 'PREFERENCES', secondaryTitle: 'Settings', description: 'Workspace preferences will live here as the platform grows.' },
+  team: { title: 'Work together.', eyebrow: 'ORGANIZATION', secondaryTitle: 'Team', description: 'People, roles, and access for your CloudOS organization.' },
+  admin: { title: 'See the whole picture.', eyebrow: 'ADMINISTRATION', secondaryTitle: 'Admin overview', description: 'A live operational view of your organization.' }
 };
 
 async function startSession() {
   const savedSessionId = window.localStorage.getItem('cloudos-session-id');
-  const endpoint = savedSessionId ? `/api/sessions?id=${encodeURIComponent(savedSessionId)}` : '/api/sessions';
+  const email = document.querySelector('#email').value;
+  const endpoint = savedSessionId ? `/api/sessions?id=${encodeURIComponent(savedSessionId)}&email=${encodeURIComponent(email)}` : `/api/sessions?email=${encodeURIComponent(email)}`;
   const response = await fetch(endpoint, { method: 'POST' });
   if (!response.ok) throw new Error('Unable to start session');
   const session = await response.json();
@@ -71,6 +74,8 @@ function connectRealtime() {
   eventSource.addEventListener('file_updated', async (event) => { await loadFiles(); showToast(`${JSON.parse(event.data).name} was updated live.`); });
   eventSource.addEventListener('settings_updated', (event) => { const settings = JSON.parse(event.data); applyTheme(settings.theme); viewTitle.textContent = `${settings.workspaceName} is live.`; });
   eventSource.addEventListener('session', () => showToast('Session state updated live.'));
+  eventSource.addEventListener('organization_updated', () => { if (secondaryTitle.textContent === 'Team') loadTeamView(); });
+  eventSource.addEventListener('audit_created', () => { if (secondaryTitle.textContent === 'Admin overview') loadAdminView(); });
 }
 
 function applyTheme(theme) {
@@ -237,6 +242,29 @@ async function bindSettings(appWindow) {
   });
 }
 
+async function loadTeamView() {
+  const response = await fetch('/api/organization');
+  if (!response.ok) return;
+  const organization = await response.json();
+  largeFileList.innerHTML = `<div class="business-heading"><div><span class="plan-badge">${escapeHtml(organization.plan)}</span><h4>${escapeHtml(organization.name)}</h4><p>${organization.members.length} people in this workspace</p></div><form class="invite-form" id="invite-member-form"><input name="name" placeholder="Name" required><input name="email" type="email" placeholder="Email" required><select name="role"><option value="member">Member</option><option value="admin">Admin</option><option value="viewer">Viewer</option></select><button class="secondary-button" type="submit">Invite</button></form></div><div class="member-table"><div class="member-table-head"><span>Person</span><span>Role</span><span>Status</span></div>${organization.members.map((member) => `<div class="member-row"><div><strong>${escapeHtml(member.name)}</strong><small>${escapeHtml(member.email)}</small></div><span class="role-badge ${member.role}">${escapeHtml(member.role)}</span><span class="member-status ${member.status}">${escapeHtml(member.status)}</span></div>`).join('')}</div>`;
+  document.querySelector('#invite-member-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const invite = await fetch('/api/organization/members', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: form.get('name'), email: form.get('email'), role: form.get('role') }) });
+    if (invite.ok) { await loadTeamView(); showToast('Invitation added to the organization.'); }
+    else { const result = await invite.json(); showToast(result.error || 'Could not invite member.'); }
+  });
+}
+
+async function loadAdminView() {
+  const [summaryResponse, auditResponse] = await Promise.all([fetch('/api/admin/summary'), fetch('/api/audit')]);
+  if (!summaryResponse.ok || !auditResponse.ok) return;
+  const summary = await summaryResponse.json();
+  const audit = await auditResponse.json();
+  const storage = `${Math.max(1, Math.ceil(summary.metrics.storageBytes / 1024))} KB`;
+  largeFileList.innerHTML = `<div class="admin-metrics"><article><span>USERS</span><strong>${summary.metrics.users}</strong><small>${summary.metrics.activeUsers} active now</small></article><article><span>CLOUD PCS</span><strong>${summary.metrics.cloudPcs}</strong><small>local-dev capacity</small></article><article><span>STORAGE</span><strong>${storage}</strong><small>persisted workspace data</small></article><article><span>AUDIT EVENTS</span><strong>${summary.metrics.auditEvents}</strong><small>latest 100 retained</small></article></div><div class="admin-columns"><section><p class="eyebrow">ACTIVE SESSIONS</p>${summary.sessions.length ? summary.sessions.map((session) => `<div class="session-row"><span class="status-dot"></span><div><strong>${escapeHtml(session.user)}</strong><small>${escapeHtml(session.host)}</small></div><span>${escapeHtml(session.status)}</span></div>`).join('') : '<p class="empty-state compact">No sessions yet.</p>'}</section><section><p class="eyebrow">AUDIT TRAIL</p>${audit.events.length ? audit.events.slice(0, 6).map((event) => `<div class="audit-row"><strong>${escapeHtml(event.action)}</strong><small>${escapeHtml(event.actor)} · ${new Date(event.createdAt).toLocaleString()}</small><span>${escapeHtml(event.details)}</span></div>`).join('') : '<p class="empty-state compact">No audit events yet.</p>'}</section></div>`;
+}
+
 function setView(view) {
   const copy = viewCopy[view] || viewCopy.overview;
   document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
@@ -257,6 +285,10 @@ function setView(view) {
     largeFileList.innerHTML = '<div class="empty-state"><span>◷</span><strong>Activity is calm.</strong><p>Your latest workspace actions will appear here.</p></div>';
   } else if (view === 'settings') {
     largeFileList.innerHTML = '<div class="settings-list"><label>Workspace name<input value="Dev workspace"></label><label>Session persistence<span class="toggle on"><i></i></span></label><label>Interface density<span class="setting-value">Comfortable</span></label></div>';
+  } else if (view === 'team') {
+    loadTeamView();
+  } else if (view === 'admin') {
+    loadAdminView();
   }
 }
 

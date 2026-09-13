@@ -117,7 +117,7 @@ CloudOS/
 
 ## Current status
 
-The local prototype now includes a Phase 2 web desktop shell plus the first Phase 3 persistence and realtime layers. Searchable app launcher, application windows, taskbar controls, server-backed terminal commands, live text editing, files, and settings are available; files and session metadata survive a local server restart, and connected clients receive updates through server-sent events. The next platform step is to add upload/download and folder operations, then replace the local session simulation with a VM and WebRTC media pipeline.
+The local prototype now includes a Phase 2 web desktop shell, Phase 3 persistence and realtime layers, and the first business workspace foundation. Searchable app launcher, application windows, server-backed apps, live settings, organization members, roles, admin metrics, and audit events are available. The next platform step is to add upload/download and folder operations, then replace the local session simulation with VM orchestration and WebRTC media streaming.
 
 ## Run locally
 

@@ -56,6 +56,17 @@ Add:
 - permissions model
 - process visibility
 
+Business MVP foundation:
+- [x] organization identity
+- [x] team members and roles
+- [x] admin usage summary
+- [x] audit event trail
+- [ ] authentication hardening and MFA
+- [ ] organization-level storage permissions
+- [ ] application policy management
+
+Status: in progress. CloudOS now has a persisted organization, member invitations, owner/admin/member/viewer roles, admin metrics, and audit events. VM isolation, billing, SSO, and compliance remain infrastructure milestones rather than local prototype features.
+
 ## Phase 5 — Multi-user virtualization
 
 Add:
