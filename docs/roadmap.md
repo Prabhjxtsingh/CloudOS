@@ -23,13 +23,16 @@ Success criteria:
 ## Phase 2 — Web desktop shell
 
 Add:
-- login screen
-- taskbar
-- app launcher
-- window manager
-- file manager
-- settings panel
-- terminal
+- [x] login screen
+- [x] taskbar
+- [x] app launcher
+- [x] window manager foundation
+- [x] file manager view
+- [x] settings panel
+- [x] terminal window
+- [x] text editor window
+
+Status: in progress. The local shell now has launchable application windows, taskbar restore and close controls, terminal commands, editor persistence, and a searchable launcher. The next Phase 2 increment is richer window behavior such as dragging, resize handles, and keyboard shortcuts.
 
 ## Phase 3 — Storage and session persistence
 

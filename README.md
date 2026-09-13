@@ -117,7 +117,7 @@ CloudOS/
 
 ## Current status
 
-The first local prototype is now running: a Node server provides health, session, and file endpoints, while the browser client provides a CloudOS desktop shell with navigation, workspace metrics, and persistent file interactions. The next step is to replace the local session simulation with a real VM and WebRTC media pipeline.
+The local prototype now includes a Phase 2 web desktop shell: searchable app launcher, application windows, taskbar restore and close controls, terminal commands, text editing, files, and settings. The next platform step is to replace the local session simulation with a real VM and WebRTC media pipeline.
 
 ## Run locally
 

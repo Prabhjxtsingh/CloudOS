@@ -87,7 +87,18 @@
         </section>
       </div>
 
-      <footer class="taskbar"><div class="taskbar-left"><button class="launcher-button" type="button" title="Open launcher" aria-label="Open launcher">C</button><span class="taskbar-divider"></span><button class="task-app active" type="button">◈ Overview</button></div><div class="taskbar-right"><span>⌁ 24 ms</span><span>◒ 72°F</span><time id="clock">10:42 AM</time></div></footer>
+      <div class="window-layer" id="window-layer" aria-live="polite"></div>
+      <div class="launcher-menu" id="launcher-menu" hidden>
+        <div class="launcher-heading"><div><p class="eyebrow">CLOUDOS APPS</p><h3>What do you need?</h3></div><button class="icon-button close-launcher" type="button" aria-label="Close launcher">×</button></div>
+        <label class="launcher-search"><span>⌕</span><input id="app-search" type="search" placeholder="Search applications"></label>
+        <div class="launcher-grid" id="launcher-grid">
+          <button class="launcher-app" type="button" data-app="files"><span class="app-tile teal">□</span><strong>Files</strong><small>Browse workspace</small></button>
+          <button class="launcher-app" type="button" data-app="terminal"><span class="app-tile navy">&gt;_</span><strong>Terminal</strong><small>Run a command</small></button>
+          <button class="launcher-app" type="button" data-app="editor"><span class="app-tile coral">✎</span><strong>Editor</strong><small>Write a note</small></button>
+          <button class="launcher-app" type="button" data-app="settings"><span class="app-tile yellow">⚙</span><strong>Settings</strong><small>Manage workspace</small></button>
+        </div>
+      </div>
+      <footer class="taskbar"><div class="taskbar-left"><button class="launcher-button" id="launcher-button" type="button" title="Open launcher" aria-label="Open launcher">C</button><span class="taskbar-divider"></span><button class="task-app active" type="button">◈ Overview</button><div class="running-apps" id="running-apps"></div></div><div class="taskbar-right"><span>⌁ 24 ms</span><span>◒ 72°F</span><time id="clock">10:42 AM</time></div></footer>
     </section>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </main>
