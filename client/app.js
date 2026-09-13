@@ -54,15 +54,16 @@ function fileIcon(file) {
 }
 
 function fileMarkup(file, detailed = false) {
-  return `<div class="file-row ${detailed ? 'detailed' : ''}" data-file-id="${file.id}" tabindex="0"><span class="file-icon ${file.type}">${fileIcon(file)}</span><div class="file-name"><strong>${escapeHtml(file.name)}</strong><span>${file.type === 'folder' ? 'Folder' : 'Document'}</span></div>${detailed ? `<span class="file-meta">${file.size}</span><span class="file-meta">${file.updated}</span>` : `<span class="file-date">${file.updated}</span>`}</div>`;
+  const actions = detailed ? `<span class="file-actions-inline"><button type="button" data-file-action="download" title="Download">↓</button><button type="button" data-file-action="rename" title="Rename">✎</button><button type="button" data-file-action="delete" title="Delete">×</button></span>` : '';
+  return `<div class="file-row ${detailed ? 'detailed' : ''}" data-file-id="${file.id}" tabindex="0"><span class="file-icon ${file.type}">${fileIcon(file)}</span><div class="file-name"><strong>${escapeHtml(file.name)}</strong><span>${file.type === 'folder' ? 'Folder' : 'Document'}</span></div>${detailed ? `<span class="file-meta">${file.size}</span><span class="file-meta">${file.updated}</span>${actions}` : `<span class="file-date">${file.updated}</span>`}</div>`;
 }
 
 function renderFiles(files) {
   fileList.innerHTML = files.slice(0, 4).map((file) => fileMarkup(file)).join('');
-  largeFileList.innerHTML = `<div class="file-table-head"><span>Name</span><span>Size</span><span>Updated</span></div>${files.map((file) => fileMarkup(file, true)).join('')}`;
+  largeFileList.innerHTML = `<div class="file-actions"><button class="secondary-button" id="upload-file-button" type="button">↑ Upload</button><button class="secondary-button" id="new-folder-button" type="button">＋ Folder</button><input id="upload-file-input" type="file" hidden></div><div class="file-table-head"><span>Name</span><span>Size</span><span>Updated</span><span></span></div>${files.map((file) => fileMarkup(file, true)).join('')}`;
   const fileWindow = document.querySelector('[data-app-window="files"]');
   if (fileWindow) {
-    fileWindow.querySelector('.window-file-list').innerHTML = files.map((file) => fileMarkup(file, true)).join('');
+    fileWindow.querySelector('.window-file-list').innerHTML = `<div class="file-actions"><button class="secondary-button window-upload-file" type="button">↑ Upload</button><button class="secondary-button window-new-folder" type="button">＋ Folder</button></div>${files.map((file) => fileMarkup(file, true)).join('')}`;
     bindFileWindow(fileWindow);
   }
 }
@@ -213,6 +214,8 @@ async function loadEditorFile(appWindow) {
 
 function bindFileWindow(appWindow) {
   appWindow.querySelectorAll('.file-row').forEach((row) => row.setAttribute('role', 'button'));
+  appWindow.querySelector('.window-new-folder')?.addEventListener('click', createFolder);
+  appWindow.querySelector('.window-upload-file')?.addEventListener('click', () => document.querySelector('#upload-file-input')?.click());
 }
 
 function openFile(fileId) {
@@ -224,6 +227,36 @@ function openFile(fileId) {
 function findFileType(fileId) {
   const row = document.querySelector(`[data-file-id="${fileId}"]`);
   return row?.querySelector('.file-icon')?.classList.contains('folder') ? 'folder' : 'text';
+}
+
+async function createFolder() {
+  const name = window.prompt('Folder name', 'New folder');
+  if (!name) return;
+  const response = await fetch('/api/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type: 'folder' }) });
+  if (response.ok) { await loadFiles(); showToast(`${name} folder created.`); }
+}
+
+async function uploadSelectedFile(file) {
+  if (!file) return;
+  const content = await file.text();
+  const response = await fetch('/api/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: file.name, content }) });
+  if (response.ok) { await loadFiles(); showToast(`${file.name} uploaded to CloudOS.`); }
+}
+
+async function handleFileAction(fileId, action) {
+  if (action === 'download') { window.location.href = `/api/files/${fileId}/download`; return; }
+  if (action === 'rename') {
+    const currentName = document.querySelector(`[data-file-id="${fileId}"] strong`)?.textContent;
+    const name = window.prompt('New file name', currentName);
+    if (!name || name === currentName) return;
+    const response = await fetch(`/api/files/${fileId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    if (response.ok) { await loadFiles(); showToast('File renamed.'); }
+    return;
+  }
+  if (action === 'delete' && window.confirm('Delete this item from CloudOS?')) {
+    const response = await fetch(`/api/files/${fileId}`, { method: 'DELETE' });
+    if (response.ok) { await loadFiles(); showToast('Item moved out of the workspace.'); }
+  }
 }
 
 async function bindSettings(appWindow) {
@@ -327,6 +360,18 @@ document.querySelector('#new-file-button').addEventListener('click', async () =>
   if (response.ok) {
     await loadFiles();
     showToast(`${name} added to your workspace.`);
+  }
+});
+document.addEventListener('click', (event) => {
+  const actionButton = event.target.closest('[data-file-action]');
+  if (actionButton) handleFileAction(actionButton.closest('.file-row').dataset.fileId, actionButton.dataset.fileAction);
+  if (event.target.matches('#new-folder-button')) createFolder();
+  if (event.target.matches('#upload-file-button')) document.querySelector('#upload-file-input').click();
+});
+document.addEventListener('change', (event) => {
+  if (event.target.matches('#upload-file-input')) {
+    uploadSelectedFile(event.target.files[0]);
+    event.target.value = '';
   }
 });
 document.addEventListener('click', (event) => {

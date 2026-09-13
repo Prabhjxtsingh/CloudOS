@@ -41,7 +41,7 @@ state.settings = { ...defaultState.settings, ...(state.settings || {}) };
 state.organization = { ...defaultState.organization, ...(state.organization || {}) };
 state.organization.members = Array.isArray(state.organization.members) ? state.organization.members : structuredClone(defaultState.organization.members);
 state.auditLogs = Array.isArray(state.auditLogs) ? state.auditLogs : [];
-state.files = Array.isArray(state.files) ? state.files.map((file) => ({ ...file, content: file.content || '' })) : structuredClone(defaultState.files);
+state.files = Array.isArray(state.files) ? state.files.map((file) => ({ ...file, content: file.content || '', versions: Array.isArray(file.versions) ? file.versions : [] })) : structuredClone(defaultState.files);
 
 function saveState() {
   fs.mkdirSync(dataRoot, { recursive: true });
@@ -215,14 +215,63 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  const downloadMatch = requestUrl.pathname.match(/^\/api\/files\/([^/]+)\/download$/);
+  if (request.method === 'GET' && downloadMatch) {
+    const file = findFile(downloadMatch[1]);
+    if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
+    response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': `attachment; filename="${file.name}"` });
+    response.end(file.content || '');
+    return;
+  }
+
+  const versionsMatch = requestUrl.pathname.match(/^\/api\/files\/([^/]+)\/versions$/);
+  if (request.method === 'GET' && versionsMatch) {
+    const file = findFile(versionsMatch[1]);
+    if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
+    sendJson(response, 200, { versions: file.versions || [] });
+    return;
+  }
+
+  if (request.method === 'PATCH' && fileMatch) {
+    readBody(request, (error, payload) => {
+      if (error) { sendJson(response, 400, { error: error.message }); return; }
+      const file = findFile(fileMatch[1]);
+      if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
+      const nextName = String(payload.name || '').trim();
+      if (!nextName) { sendJson(response, 400, { error: 'A file name is required' }); return; }
+      file.name = nextName;
+      file.updated = 'Just now';
+      recordAudit('File renamed', 'demo@cloudos.local', nextName);
+      saveState();
+      broadcast('file_updated', file);
+      sendJson(response, 200, file);
+    });
+    return;
+  }
+
+  if (request.method === 'DELETE' && fileMatch) {
+    const fileIndex = state.files.findIndex((file) => file.id === fileMatch[1]);
+    if (fileIndex < 0) { sendJson(response, 404, { error: 'File not found' }); return; }
+    const [file] = state.files.splice(fileIndex, 1);
+    recordAudit('File deleted', 'demo@cloudos.local', file.name);
+    saveState();
+    broadcast('file_deleted', { id: file.id, name: file.name });
+    sendJson(response, 200, { deleted: file.id });
+    return;
+  }
+
   if (request.method === 'PUT' && fileMatch) {
     readBody(request, (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       const file = findFile(fileMatch[1]);
       if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
+      file.versions = Array.isArray(file.versions) ? file.versions : [];
+      file.versions.unshift({ id: randomUUID(), content: file.content || '', createdAt: new Date().toISOString() });
+      file.versions = file.versions.slice(0, 10);
       file.content = String(payload.content || '');
       file.size = `${Math.max(1, Math.ceil(Buffer.byteLength(file.content) / 1024))} KB`;
       file.updated = 'Just now';
+      recordAudit('File updated', 'demo@cloudos.local', file.name);
       saveState();
       broadcast('file_updated', file);
       sendJson(response, 200, file);
@@ -240,10 +289,12 @@ const server = http.createServer((request, response) => {
           type: payload.type === 'folder' ? 'folder' : 'text',
           size: payload.content ? `${Math.max(1, Math.ceil(Buffer.byteLength(String(payload.content)) / 1024))} KB` : '--',
           updated: 'Just now',
-          content: String(payload.content || '')
+          content: String(payload.content || ''),
+          versions: []
         };
         state.files.unshift(file);
         saveState();
+        recordAudit(file.type === 'folder' ? 'Folder created' : 'File created', 'demo@cloudos.local', file.name);
         broadcast('file_created', file);
         sendJson(response, 201, file);
       } catch (creationError) {

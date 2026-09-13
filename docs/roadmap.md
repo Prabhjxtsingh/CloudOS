@@ -38,12 +38,13 @@ Status: in progress. The local shell now has launchable application windows, tas
 
 Add:
 - [x] personal storage foundation
-- upload/download support
-- create/rename/delete folders
+- [x] upload/download support
+- [x] create/rename/delete files and folders
 - [x] session persistence across reconnects
 - [x] consistent file list after server restart
+- [x] lightweight file version history
 
-Status: in progress. Files and session metadata are persisted to a local JSON store for development. The next Phase 3 increment is real file content, upload/download, and folder operations.
+Status: in progress. Files and session metadata are persisted to a local JSON store for development, with live file management and ten-version history. The next Phase 3 increment is folders with nested paths, sharing, and restoreable versions.
 
 Realtime foundation: the browser subscribes to server-sent events, so file creation, file edits, settings changes, and session changes are broadcast to connected CloudOS clients immediately.
 

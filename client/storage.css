@@ -1,0 +1,51 @@
+.file-table-head,
+.file-row.detailed {
+  grid-template-columns: minmax(0, 1fr) 80px 90px 92px;
+}
+
+.file-actions-inline {
+  display: flex;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.file-actions-inline button {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.file-actions-inline button:hover {
+  background: #e5f4f0;
+  color: var(--teal-deep);
+}
+
+.file-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.file-actions .secondary-button {
+  padding: 8px 10px;
+  font-size: 10px;
+}
+
+body.night-mode .file-actions-inline button:hover {
+  background: #203640;
+}
+
+@media (max-width: 560px) {
+  .file-table-head,
+  .file-row.detailed {
+    grid-template-columns: minmax(0, 1fr) 56px 86px;
+  }
+
+  .file-table-head span:nth-child(2),
+  .file-row.detailed .file-meta:first-of-type {
+    display: none;
+  }
+}
