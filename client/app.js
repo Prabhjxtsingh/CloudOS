@@ -18,6 +18,8 @@ const appSearch = document.querySelector('#app-search');
 let currentSession;
 let toastTimer;
 let windowSequence = 0;
+let selectedFileId = 'notes';
+let eventSource;
 
 const viewCopy = {
   overview: { title: 'Good morning, Dev.', eyebrow: '', secondaryTitle: '', description: '' },
@@ -49,12 +51,26 @@ function fileIcon(file) {
 }
 
 function fileMarkup(file, detailed = false) {
-  return `<div class="file-row ${detailed ? 'detailed' : ''}"><span class="file-icon ${file.type}">${fileIcon(file)}</span><div class="file-name"><strong>${escapeHtml(file.name)}</strong><span>${file.type === 'folder' ? 'Folder' : 'Document'}</span></div>${detailed ? `<span class="file-meta">${file.size}</span><span class="file-meta">${file.updated}</span>` : `<span class="file-date">${file.updated}</span>`}</div>`;
+  return `<div class="file-row ${detailed ? 'detailed' : ''}" data-file-id="${file.id}" tabindex="0"><span class="file-icon ${file.type}">${fileIcon(file)}</span><div class="file-name"><strong>${escapeHtml(file.name)}</strong><span>${file.type === 'folder' ? 'Folder' : 'Document'}</span></div>${detailed ? `<span class="file-meta">${file.size}</span><span class="file-meta">${file.updated}</span>` : `<span class="file-date">${file.updated}</span>`}</div>`;
 }
 
 function renderFiles(files) {
   fileList.innerHTML = files.slice(0, 4).map((file) => fileMarkup(file)).join('');
   largeFileList.innerHTML = `<div class="file-table-head"><span>Name</span><span>Size</span><span>Updated</span></div>${files.map((file) => fileMarkup(file, true)).join('')}`;
+  const fileWindow = document.querySelector('[data-app-window="files"]');
+  if (fileWindow) {
+    fileWindow.querySelector('.window-file-list').innerHTML = files.map((file) => fileMarkup(file, true)).join('');
+    bindFileWindow(fileWindow);
+  }
+}
+
+function connectRealtime() {
+  eventSource?.close();
+  eventSource = new EventSource('/api/events');
+  eventSource.addEventListener('file_created', async (event) => { await loadFiles(); showToast(`${JSON.parse(event.data).name} was added from another session.`); });
+  eventSource.addEventListener('file_updated', async (event) => { await loadFiles(); showToast(`${JSON.parse(event.data).name} was updated live.`); });
+  eventSource.addEventListener('settings_updated', (event) => { const settings = JSON.parse(event.data); viewTitle.textContent = `${settings.workspaceName} is live.`; });
+  eventSource.addEventListener('session', () => showToast('Session state updated live.'));
 }
 
 function escapeHtml(value) {
@@ -78,8 +94,8 @@ const appDefinitions = {
 
 function appContent(appName, windowId) {
   if (appName === 'terminal') return `<div class="terminal-output" id="terminal-output-${windowId}"><p>CloudOS Terminal <span>v0.1 local</span></p><p>Type <strong>help</strong> to see available commands.</p></div><form class="terminal-form" data-window="${windowId}"><span>dev@cloudos:~$</span><input type="text" autocomplete="off" aria-label="Terminal command"><button type="submit" aria-label="Run command">↵</button></form>`;
-  if (appName === 'editor') return `<div class="editor-toolbar"><span>CloudOS-notes.md</span><button type="button" class="text-button editor-save" data-window="${windowId}">Save note</button></div><textarea class="editor-input" id="editor-input-${windowId}" aria-label="Text editor"># CloudOS notes\n\nThis is your cloud workspace. Write something here and save it to your files.</textarea>`;
-  if (appName === 'settings') return '<div class="window-settings"><label>Workspace name<input value="Dev workspace"></label><label>Session persistence<span class="toggle on"><i></i></span></label><label>Notifications<span class="toggle on"><i></i></span></label><button class="secondary-button window-action" type="button">Apply changes</button></div>';
+  if (appName === 'editor') return `<div class="editor-toolbar"><span class="editor-file-name">Loading file...</span><button type="button" class="text-button editor-save" data-window="${windowId}">Save note</button></div><textarea class="editor-input" id="editor-input-${windowId}" aria-label="Text editor">Loading file...</textarea>`;
+  if (appName === 'settings') return '<div class="window-settings"><label>Workspace name<input class="settings-workspace-name" value="Dev workspace"></label><label>Session persistence<input class="settings-persistence" type="checkbox" checked></label><label>Notifications<input class="settings-notifications" type="checkbox" checked></label><button class="secondary-button window-action" type="button">Apply changes</button></div>';
   return `<div class="window-file-list">${largeFileList.innerHTML || '<p class="window-empty">Loading workspace files...</p>'}</div>`;
 }
 
@@ -113,7 +129,8 @@ function openApp(appName) {
   runningApps.appendChild(taskButton);
   if (appName === 'terminal') bindTerminal(appWindow);
   if (appName === 'editor') bindEditor(appWindow, windowId);
-  if (appName === 'settings') appWindow.querySelector('.window-action').addEventListener('click', () => showToast('Workspace preferences updated.'));
+  if (appName === 'settings') bindSettings(appWindow);
+  if (appName === 'files') bindFileWindow(appWindow);
 }
 
 function bindWindowMovement(appWindow) {
@@ -146,24 +163,61 @@ function closeLauncher() {
 function bindTerminal(appWindow) {
   const form = appWindow.querySelector('.terminal-form');
   const output = appWindow.querySelector('.terminal-output');
-  form.addEventListener('submit', (event) => {
+  form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const input = form.querySelector('input');
     const command = input.value.trim();
     if (!command) return;
-    const response = { help: 'Available: help, clear, date, whoami, ls', date: new Date().toString(), whoami: 'dev@cloudos.local', ls: 'Welcome.txt  Projects/  CloudOS-notes.md' }[command] || `command not found: ${command}`;
+    const response = await fetch('/api/terminal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command }) });
+    const result = await response.json();
     if (command === 'clear') output.innerHTML = '';
-    else output.insertAdjacentHTML('beforeend', `<p><span>dev@cloudos:~$</span> ${escapeHtml(command)}</p><p>${escapeHtml(response)}</p>`);
+    else output.insertAdjacentHTML('beforeend', `<p><span>dev@cloudos:~$</span> ${escapeHtml(command)}</p><p>${escapeHtml(result.output)}</p>`);
     input.value = '';
     output.scrollTop = output.scrollHeight;
   });
 }
 
 function bindEditor(appWindow, windowId) {
+  loadEditorFile(appWindow, windowId);
   appWindow.querySelector('.editor-save').addEventListener('click', async () => {
     const content = appWindow.querySelector(`#editor-input-${windowId}`).value;
-    const response = await fetch('/api/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'CloudOS-note-copy.md', content }) });
+    const response = await fetch(`/api/files/${selectedFileId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) });
     if (response.ok) { await loadFiles(); showToast('Note saved to your workspace.'); }
+  });
+}
+
+async function loadEditorFile(appWindow, windowId) {
+  const response = await fetch(`/api/files/${selectedFileId}`);
+  if (!response.ok) return;
+  const payload = await response.json();
+  appWindow.querySelector('.editor-file-name').textContent = payload.file.name;
+  appWindow.querySelector(`#editor-input-${windowId}`).value = payload.file.content || '';
+}
+
+function bindFileWindow(appWindow) {
+  appWindow.querySelectorAll('.file-row').forEach((row) => row.addEventListener('dblclick', () => {
+    selectedFileId = row.dataset.fileId;
+    if (findFileType(selectedFileId) === 'text') openApp('editor');
+  }));
+}
+
+function findFileType(fileId) {
+  const row = document.querySelector(`[data-file-id="${fileId}"]`);
+  return row?.querySelector('.file-icon')?.classList.contains('folder') ? 'folder' : 'text';
+}
+
+async function bindSettings(appWindow) {
+  const settingsResponse = await fetch('/api/settings');
+  if (settingsResponse.ok) {
+    const settings = await settingsResponse.json();
+    appWindow.querySelector('.settings-workspace-name').value = settings.workspaceName;
+    appWindow.querySelector('.settings-persistence').checked = settings.sessionPersistence;
+    appWindow.querySelector('.settings-notifications').checked = settings.notifications;
+  }
+  appWindow.querySelector('.window-action').addEventListener('click', async () => {
+    const settings = { workspaceName: appWindow.querySelector('.settings-workspace-name').value, sessionPersistence: appWindow.querySelector('.settings-persistence').checked, notifications: appWindow.querySelector('.settings-notifications').checked };
+    const response = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
+    if (response.ok) showToast('Workspace preferences updated live.');
   });
 }
 
@@ -199,6 +253,7 @@ loginForm.addEventListener('submit', async (event) => {
     loginScreen.hidden = true;
     desktop.hidden = false;
     await loadFiles();
+    connectRealtime();
     showToast('Workspace ready. Your session is running.');
   } catch (error) {
     loginStatus.textContent = 'Could not connect. Is the local server running?';

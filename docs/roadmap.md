@@ -45,6 +45,8 @@ Add:
 
 Status: in progress. Files and session metadata are persisted to a local JSON store for development. The next Phase 3 increment is real file content, upload/download, and folder operations.
 
+Realtime foundation: the browser subscribes to server-sent events, so file creation, file edits, settings changes, and session changes are broadcast to connected CloudOS clients immediately.
+
 ## Phase 4 — Application architecture
 
 Add:
