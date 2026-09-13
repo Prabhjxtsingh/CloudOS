@@ -36,6 +36,16 @@ Start with a single Linux VM and a minimal API that:
 - routes browser events to the VM input system
 - streams desktop frames back to the browser
 
+## Storage provider
+
+File contents are accessed through `server/storage.js` rather than directly from request handlers. Development uses the local provider by default:
+
+```text
+CLOUDOS_STORAGE_PROVIDER=local
+```
+
+The metadata remains in `data/cloudos-state.json`, while content blobs live under `data/objects/`. A production S3-compatible adapter can now be added behind the same provider contract without changing the Files API.
+
 ## Recommended language choice
 
 For the first serious implementation, prefer:

@@ -2,11 +2,13 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const { createStorage } = require('./storage');
 
 const clientRoot = path.join(__dirname, '..', 'client');
 const dataRoot = path.join(__dirname, '..', 'data');
 const objectRoot = path.join(dataRoot, 'objects');
 const statePath = path.join(dataRoot, 'cloudos-state.json');
+const storage = createStorage({ root: objectRoot });
 const port = Number(process.env.PORT || 3000);
 const eventClients = new Set();
 const defaultState = {
@@ -46,7 +48,7 @@ state.auditLogs = Array.isArray(state.auditLogs) ? state.auditLogs : [];
 state.shares = Array.isArray(state.shares) ? state.shares : [];
 state.files = Array.isArray(state.files) ? state.files.map((file) => ({ ...file, objectKey: file.objectKey || file.id, parentId: file.parentId || null, trashedAt: file.trashedAt || null, content: file.content || '', versions: Array.isArray(file.versions) ? file.versions : [] })) : structuredClone(defaultState.files);
 for (const file of state.files) {
-  if (!fs.existsSync(objectPath(file))) writeObjectContent(file, file.content || '');
+  if (!storage.exists(objectPath(file))) writeObjectContent(file, file.content || '');
 }
 
 function saveState() {
@@ -55,20 +57,19 @@ function saveState() {
 }
 
 function objectPath(file) {
-  return path.join(objectRoot, file.objectKey || file.id);
+  return file.objectKey || file.id;
 }
 
 function readObjectContent(file) {
   try {
-    return fs.readFileSync(objectPath(file), 'utf8');
+    return storage.read(objectPath(file));
   } catch {
     return file.content || '';
   }
 }
 
 function writeObjectContent(file, content) {
-  fs.mkdirSync(objectRoot, { recursive: true });
-  fs.writeFileSync(objectPath(file), content);
+  storage.write(objectPath(file), content);
 }
 
 function sendJson(response, statusCode, body) {
@@ -136,7 +137,7 @@ const server = http.createServer((request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/health') {
-    sendJson(response, 200, { status: 'ok', service: 'cloudos-local' });
+    sendJson(response, 200, { status: 'ok', service: 'cloudos-local', storage: storage.name });
     return;
   }
 
@@ -355,7 +356,7 @@ const server = http.createServer((request, response) => {
     if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
     if (requestUrl.searchParams.get('permanent') === 'true') {
       state.files = state.files.filter((item) => item.id !== file.id);
-      try { fs.unlinkSync(objectPath(file)); } catch {}
+      storage.remove(objectPath(file));
       recordAudit('File permanently deleted', 'demo@cloudos.local', file.name);
       saveState();
       broadcast('file_deleted', { id: file.id, name: file.name });

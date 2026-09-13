@@ -53,7 +53,7 @@ Add:
 - [x] permanent deletion from Trash
 - [x] local object storage for file contents
 
-Status: in progress. Metadata remains in a local JSON store while file contents are migrated into local object blobs. The next Phase 3 increment is object-store abstraction, retention policies, and production storage such as S3 or a compatible service.
+Status: in progress. Metadata remains in a local JSON store while file contents use a provider abstraction and local object blobs. The next Phase 3 increment is an S3-compatible provider, retention policies, and background cleanup.
 
 Realtime foundation: the browser subscribes to server-sent events, so file creation, file edits, settings changes, and session changes are broadcast to connected CloudOS clients immediately.
 
