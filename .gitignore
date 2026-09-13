@@ -24,3 +24,4 @@ Thumbs.db
 
 # Docker / local data
 *.sqlite3
+data/

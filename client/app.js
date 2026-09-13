@@ -28,9 +28,13 @@ const viewCopy = {
 };
 
 async function startSession() {
-  const response = await fetch('/api/sessions', { method: 'POST' });
+  const savedSessionId = window.localStorage.getItem('cloudos-session-id');
+  const endpoint = savedSessionId ? `/api/sessions?id=${encodeURIComponent(savedSessionId)}` : '/api/sessions';
+  const response = await fetch(endpoint, { method: 'POST' });
   if (!response.ok) throw new Error('Unable to start session');
-  return response.json();
+  const session = await response.json();
+  window.localStorage.setItem('cloudos-session-id', session.id);
+  return session;
 }
 
 async function loadFiles() {
@@ -97,6 +101,7 @@ function openApp(appName) {
   appWindow.innerHTML = `<header class="window-titlebar"><div><span class="app-tile ${definition.tone}">${definition.icon}</span><strong>${definition.title}</strong></div><div class="window-controls"><button type="button" class="window-minimize" aria-label="Minimize ${definition.title}">−</button><button type="button" class="window-close" aria-label="Close ${definition.title}">×</button></div></header><div class="window-content">${appContent(appName, windowId)}</div>`;
   windowLayer.appendChild(appWindow);
   appWindow.addEventListener('pointerdown', () => { appWindow.style.zIndex = ++windowSequence; });
+  bindWindowMovement(appWindow);
   appWindow.querySelector('.window-close').addEventListener('click', () => { appWindow.remove(); document.querySelector(`[data-running-app="${appName}"]`)?.remove(); });
   appWindow.querySelector('.window-minimize').addEventListener('click', () => { appWindow.classList.add('minimized'); });
   const taskButton = document.createElement('button');
@@ -109,6 +114,27 @@ function openApp(appName) {
   if (appName === 'terminal') bindTerminal(appWindow);
   if (appName === 'editor') bindEditor(appWindow, windowId);
   if (appName === 'settings') appWindow.querySelector('.window-action').addEventListener('click', () => showToast('Workspace preferences updated.'));
+}
+
+function bindWindowMovement(appWindow) {
+  const titlebar = appWindow.querySelector('.window-titlebar');
+  let dragState;
+  titlebar.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('button')) return;
+    const layerRect = windowLayer.getBoundingClientRect();
+    const windowRect = appWindow.getBoundingClientRect();
+    dragState = { offsetX: event.clientX - windowRect.left, offsetY: event.clientY - windowRect.top, layerRect };
+    titlebar.setPointerCapture(event.pointerId);
+  });
+  titlebar.addEventListener('pointermove', (event) => {
+    if (!dragState) return;
+    const nextLeft = Math.max(0, Math.min(dragState.layerRect.width - appWindow.offsetWidth, event.clientX - dragState.layerRect.left - dragState.offsetX));
+    const nextTop = Math.max(0, Math.min(dragState.layerRect.height - appWindow.offsetHeight, event.clientY - dragState.layerRect.top - dragState.offsetY));
+    appWindow.style.left = `${nextLeft}px`;
+    appWindow.style.top = `${nextTop}px`;
+  });
+  titlebar.addEventListener('pointerup', () => { dragState = undefined; });
+  titlebar.addEventListener('pointercancel', () => { dragState = undefined; });
 }
 
 function closeLauncher() {
@@ -186,6 +212,10 @@ document.querySelector('#launcher-button').addEventListener('click', () => { lau
 document.querySelector('.close-launcher').addEventListener('click', closeLauncher);
 document.querySelectorAll('.launcher-app').forEach((button) => button.addEventListener('click', () => openApp(button.dataset.app)));
 appSearch.addEventListener('input', () => { const query = appSearch.value.toLowerCase(); document.querySelectorAll('.launcher-app').forEach((app) => { app.hidden = !app.textContent.toLowerCase().includes(query); }); });
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeLauncher();
+  if (event.ctrlKey && event.altKey && event.key.toLowerCase() === 't') { event.preventDefault(); openApp('terminal'); }
+});
 document.querySelector('#new-file-button').addEventListener('click', async () => {
   const name = window.prompt('Name your new file', 'Untitled.txt');
   if (!name) return;

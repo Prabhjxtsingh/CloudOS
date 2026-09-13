@@ -4,13 +4,32 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 
 const clientRoot = path.join(__dirname, '..', 'client');
+const dataRoot = path.join(__dirname, '..', 'data');
+const statePath = path.join(dataRoot, 'cloudos-state.json');
 const port = Number(process.env.PORT || 3000);
-const sessions = new Map();
-const files = [
-  { id: 'welcome', name: 'Welcome.txt', type: 'text', size: '1 KB', updated: 'Just now' },
-  { id: 'projects', name: 'Projects', type: 'folder', size: '--', updated: 'Today' },
-  { id: 'notes', name: 'CloudOS-notes.md', type: 'text', size: '4 KB', updated: 'Yesterday' }
-];
+const defaultState = {
+  sessions: [],
+  files: [
+    { id: 'welcome', name: 'Welcome.txt', type: 'text', size: '1 KB', updated: 'Just now' },
+    { id: 'projects', name: 'Projects', type: 'folder', size: '--', updated: 'Today' },
+    { id: 'notes', name: 'CloudOS-notes.md', type: 'text', size: '4 KB', updated: 'Yesterday' }
+  ]
+};
+
+function loadState() {
+  try {
+    return JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  } catch {
+    return structuredClone(defaultState);
+  }
+}
+
+let state = loadState();
+
+function saveState() {
+  fs.mkdirSync(dataRoot, { recursive: true });
+  fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+}
 
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -54,20 +73,26 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'POST' && requestUrl.pathname === '/api/sessions') {
-    const session = {
+    const requestedId = requestUrl.searchParams.get('id');
+    const existingSession = state.sessions.find((session) => session.id === requestedId);
+    const session = existingSession || {
       id: randomUUID(),
       user: 'demo@cloudos.local',
       status: 'running',
       host: 'local-dev',
-      startedAt: new Date().toISOString()
+      startedAt: new Date().toISOString(),
+      lastConnectedAt: new Date().toISOString()
     };
-    sessions.set(session.id, session);
+    session.status = 'running';
+    session.lastConnectedAt = new Date().toISOString();
+    if (!existingSession) state.sessions.push(session);
+    saveState();
     sendJson(response, 201, session);
     return;
   }
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/files') {
-    sendJson(response, 200, { files });
+    sendJson(response, 200, { files: state.files });
     return;
   }
 
@@ -84,7 +109,8 @@ const server = http.createServer((request, response) => {
           size: '--',
           updated: 'Just now'
         };
-        files.unshift(file);
+        state.files.unshift(file);
+        saveState();
         sendJson(response, 201, file);
       } catch {
         sendJson(response, 400, { error: 'Invalid JSON payload' });

@@ -37,11 +37,13 @@ Status: in progress. The local shell now has launchable application windows, tas
 ## Phase 3 — Storage and session persistence
 
 Add:
-- personal storage
+- [x] personal storage foundation
 - upload/download support
 - create/rename/delete folders
-- session persistence across reconnects
-- consistent user environment
+- [x] session persistence across reconnects
+- [x] consistent file list after server restart
+
+Status: in progress. Files and session metadata are persisted to a local JSON store for development. The next Phase 3 increment is real file content, upload/download, and folder operations.
 
 ## Phase 4 — Application architecture
 
