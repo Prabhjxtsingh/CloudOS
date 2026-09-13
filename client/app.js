@@ -30,7 +30,8 @@ const viewCopy = {
   activity: { title: 'A clear trail.', eyebrow: 'ACTIVITY', secondaryTitle: 'Recent activity', description: 'A simple record of what changed in your workspace.' },
   settings: { title: 'Make it yours.', eyebrow: 'PREFERENCES', secondaryTitle: 'Settings', description: 'Workspace preferences will live here as the platform grows.' },
   team: { title: 'Work together.', eyebrow: 'ORGANIZATION', secondaryTitle: 'Team', description: 'People, roles, and access for your CloudOS organization.' },
-  admin: { title: 'See the whole picture.', eyebrow: 'ADMINISTRATION', secondaryTitle: 'Admin overview', description: 'A live operational view of your organization.' }
+  admin: { title: 'See the whole picture.', eyebrow: 'ADMINISTRATION', secondaryTitle: 'Admin overview', description: 'A live operational view of your organization.' },
+  trash: { title: 'Nothing is truly gone.', eyebrow: 'RECOVERY', secondaryTitle: 'Trash', description: 'Restore items removed from your workspace.' }
 };
 
 async function startSession() {
@@ -75,7 +76,7 @@ function connectRealtime() {
   eventSource?.close();
   eventSource = new EventSource('/api/events');
   eventSource.addEventListener('file_created', async (event) => { await loadFiles(); showToast(`${JSON.parse(event.data).name} was added from another session.`); });
-  eventSource.addEventListener('file_updated', async (event) => { await loadFiles(); showToast(`${JSON.parse(event.data).name} was updated live.`); });
+  eventSource.addEventListener('file_updated', async (event) => { await loadFiles(); if (secondaryTitle.textContent === 'Trash') loadTrashView(); showToast(`${JSON.parse(event.data).name} was updated live.`); });
   eventSource.addEventListener('settings_updated', (event) => { const settings = JSON.parse(event.data); applyTheme(settings.theme); viewTitle.textContent = `${settings.workspaceName} is live.`; });
   eventSource.addEventListener('session', () => showToast('Session state updated live.'));
   eventSource.addEventListener('organization_updated', () => { if (secondaryTitle.textContent === 'Team') loadTeamView(); });
@@ -261,6 +262,11 @@ async function uploadSelectedFile(file) {
 
 async function handleFileAction(fileId, action) {
   if (action === 'download') { window.location.href = `/api/files/${fileId}/download`; return; }
+  if (action === 'trash-restore') {
+    const response = await fetch(`/api/files/${fileId}/restore`, { method: 'POST' });
+    if (response.ok) { await loadTrashView(); showToast('Item restored from Trash.'); }
+    return;
+  }
   if (action === 'share') {
     const permission = window.prompt('Share permission: view or edit', 'view');
     if (!permission) return;
@@ -338,6 +344,13 @@ async function loadAdminView() {
   largeFileList.innerHTML = `<div class="admin-metrics"><article><span>USERS</span><strong>${summary.metrics.users}</strong><small>${summary.metrics.activeUsers} active now</small></article><article><span>CLOUD PCS</span><strong>${summary.metrics.cloudPcs}</strong><small>local-dev capacity</small></article><article><span>STORAGE</span><strong>${storage}</strong><small>persisted workspace data</small></article><article><span>AUDIT EVENTS</span><strong>${summary.metrics.auditEvents}</strong><small>latest 100 retained</small></article></div><div class="admin-columns"><section><p class="eyebrow">ACTIVE SESSIONS</p>${summary.sessions.length ? summary.sessions.map((session) => `<div class="session-row"><span class="status-dot"></span><div><strong>${escapeHtml(session.user)}</strong><small>${escapeHtml(session.host)}</small></div><span>${escapeHtml(session.status)}</span></div>`).join('') : '<p class="empty-state compact">No sessions yet.</p>'}</section><section><p class="eyebrow">AUDIT TRAIL</p>${audit.events.length ? audit.events.slice(0, 6).map((event) => `<div class="audit-row"><strong>${escapeHtml(event.action)}</strong><small>${escapeHtml(event.actor)} · ${new Date(event.createdAt).toLocaleString()}</small><span>${escapeHtml(event.details)}</span></div>`).join('') : '<p class="empty-state compact">No audit events yet.</p>'}</section></div>`;
 }
 
+async function loadTrashView() {
+  const response = await fetch('/api/files?trashed=true');
+  if (!response.ok) return;
+  const payload = await response.json();
+  largeFileList.innerHTML = payload.files.length ? `<div class="file-table-head"><span>Name</span><span>Removed</span><span></span></div>${payload.files.map((file) => `<div class="file-row detailed trash-row" data-file-id="${file.id}"><span class="file-icon ${file.type}">${fileIcon(file)}</span><div class="file-name"><strong>${escapeHtml(file.name)}</strong><span>${file.type === 'folder' ? 'Folder' : 'Document'}</span></div><span class="file-meta">${new Date(file.trashedAt).toLocaleDateString()}</span><span class="file-actions-inline"><button type="button" data-file-action="trash-restore" title="Restore">↺ Restore</button></span></div>`).join('')}` : '<div class="empty-state"><span>♢</span><strong>Trash is empty.</strong><p>Removed files will stay here until restored.</p></div>';
+}
+
 function setView(view) {
   const copy = viewCopy[view] || viewCopy.overview;
   document.querySelectorAll('.nav-item').forEach((item) => item.classList.toggle('active', item.dataset.view === view));
@@ -362,6 +375,8 @@ function setView(view) {
     loadTeamView();
   } else if (view === 'admin') {
     loadAdminView();
+  } else if (view === 'trash') {
+    loadTrashView();
   }
 }
 

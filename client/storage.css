@@ -39,6 +39,14 @@
   color: var(--teal-deep);
 }
 
+.trash-row .file-actions-inline button[data-file-action="trash-restore"] {
+  width: auto;
+  padding: 0 7px;
+  color: var(--teal-deep);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .file-actions {
   display: flex;
   justify-content: flex-end;

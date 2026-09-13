@@ -22,9 +22,9 @@ const defaultState = {
   auditLogs: [],
   shares: [],
   files: [
-    { id: 'welcome', name: 'Welcome.txt', type: 'text', parentId: null, size: '1 KB', updated: 'Just now', content: 'Welcome to your CloudOS workspace.\n' },
-    { id: 'projects', name: 'Projects', type: 'folder', parentId: null, size: '--', updated: 'Today' },
-    { id: 'notes', name: 'CloudOS-notes.md', type: 'text', parentId: null, size: '4 KB', updated: 'Yesterday', content: '# CloudOS notes\n\nYour workspace is live.\n' }
+    { id: 'welcome', name: 'Welcome.txt', type: 'text', parentId: null, trashedAt: null, size: '1 KB', updated: 'Just now', content: 'Welcome to your CloudOS workspace.\n' },
+    { id: 'projects', name: 'Projects', type: 'folder', parentId: null, trashedAt: null, size: '--', updated: 'Today' },
+    { id: 'notes', name: 'CloudOS-notes.md', type: 'text', parentId: null, trashedAt: null, size: '4 KB', updated: 'Yesterday', content: '# CloudOS notes\n\nYour workspace is live.\n' }
   ]
 };
 
@@ -43,7 +43,7 @@ state.organization = { ...defaultState.organization, ...(state.organization || {
 state.organization.members = Array.isArray(state.organization.members) ? state.organization.members : structuredClone(defaultState.organization.members);
 state.auditLogs = Array.isArray(state.auditLogs) ? state.auditLogs : [];
 state.shares = Array.isArray(state.shares) ? state.shares : [];
-state.files = Array.isArray(state.files) ? state.files.map((file) => ({ ...file, parentId: file.parentId || null, content: file.content || '', versions: Array.isArray(file.versions) ? file.versions : [] })) : structuredClone(defaultState.files);
+state.files = Array.isArray(state.files) ? state.files.map((file) => ({ ...file, parentId: file.parentId || null, trashedAt: file.trashedAt || null, content: file.content || '', versions: Array.isArray(file.versions) ? file.versions : [] })) : structuredClone(defaultState.files);
 
 function saveState() {
   fs.mkdirSync(dataRoot, { recursive: true });
@@ -205,7 +205,8 @@ const server = http.createServer((request, response) => {
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/files') {
     const parentId = requestUrl.searchParams.get('parentId') || null;
-    sendJson(response, 200, { files: state.files.filter((file) => file.parentId === parentId), parentId });
+    const trashed = requestUrl.searchParams.get('trashed') === 'true';
+    sendJson(response, 200, { files: state.files.filter((file) => trashed ? file.trashedAt : !file.trashedAt && file.parentId === parentId), parentId, trashed });
     return;
   }
 
@@ -275,6 +276,25 @@ const server = http.createServer((request, response) => {
     return;
   }
 
+  if (request.method === 'PUT' && publicShareMatch) {
+    const share = state.shares.find((item) => item.token === publicShareMatch[1]);
+    const file = share && findFile(share.fileId);
+    if (!share || !file || share.permission !== 'edit') { sendJson(response, 403, { error: 'This share is read-only' }); return; }
+    readBody(request, (error, payload) => {
+      if (error) { sendJson(response, 400, { error: error.message }); return; }
+      file.versions.unshift({ id: randomUUID(), content: file.content || '', createdAt: new Date().toISOString() });
+      file.versions = file.versions.slice(0, 10);
+      file.content = String(payload.content || '');
+      file.size = `${Math.max(1, Math.ceil(Buffer.byteLength(file.content) / 1024))} KB`;
+      file.updated = 'Just now';
+      recordAudit('Shared file edited', 'share-link', file.name);
+      saveState();
+      broadcast('file_updated', file);
+      sendJson(response, 200, { name: file.name, content: file.content, permission: share.permission });
+    });
+    return;
+  }
+
   if (request.method === 'PATCH' && fileMatch) {
     readBody(request, (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
@@ -293,13 +313,25 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'DELETE' && fileMatch) {
-    const fileIndex = state.files.findIndex((file) => file.id === fileMatch[1]);
-    if (fileIndex < 0) { sendJson(response, 404, { error: 'File not found' }); return; }
-    const [file] = state.files.splice(fileIndex, 1);
-    recordAudit('File deleted', 'demo@cloudos.local', file.name);
+    const file = findFile(fileMatch[1]);
+    if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
+    file.trashedAt = new Date().toISOString();
+    recordAudit('File moved to trash', 'demo@cloudos.local', file.name);
     saveState();
-    broadcast('file_deleted', { id: file.id, name: file.name });
-    sendJson(response, 200, { deleted: file.id });
+    broadcast('file_updated', file);
+    sendJson(response, 200, { trashed: file.id });
+    return;
+  }
+
+  const restoreFileMatch = requestUrl.pathname.match(/^\/api\/files\/([^/]+)\/restore$/);
+  if (request.method === 'POST' && restoreFileMatch) {
+    const file = findFile(restoreFileMatch[1]);
+    if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
+    file.trashedAt = null;
+    recordAudit('File restored from trash', 'demo@cloudos.local', file.name);
+    saveState();
+    broadcast('file_updated', file);
+    sendJson(response, 200, file);
     return;
   }
 

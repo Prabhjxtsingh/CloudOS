@@ -46,8 +46,10 @@ Add:
 - [x] nested folder paths
 - [x] share links with view/edit permission
 - [x] restore previous versions
+- [x] Trash and restore workflow
+- [x] read-only share enforcement
 
-Status: in progress. Files and session metadata are persisted to a local JSON store for development, with live file management, nested paths, share tokens, and ten-version history. The next Phase 3 increment is permission-aware sharing, trash/restore workflows, and object storage.
+Status: in progress. Files and session metadata are persisted to a local JSON store for development, with live file management, nested paths, share tokens, permission-aware edits, Trash, and ten-version history. The next Phase 3 increment is expiring/revocable shares, permanent deletion, and object storage.
 
 Realtime foundation: the browser subscribes to server-sent events, so file creation, file edits, settings changes, and session changes are broadcast to connected CloudOS clients immediately.
 
