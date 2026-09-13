@@ -20,10 +20,11 @@ const defaultState = {
     ]
   },
   auditLogs: [],
+  shares: [],
   files: [
-    { id: 'welcome', name: 'Welcome.txt', type: 'text', size: '1 KB', updated: 'Just now', content: 'Welcome to your CloudOS workspace.\n' },
-    { id: 'projects', name: 'Projects', type: 'folder', size: '--', updated: 'Today' },
-    { id: 'notes', name: 'CloudOS-notes.md', type: 'text', size: '4 KB', updated: 'Yesterday', content: '# CloudOS notes\n\nYour workspace is live.\n' }
+    { id: 'welcome', name: 'Welcome.txt', type: 'text', parentId: null, size: '1 KB', updated: 'Just now', content: 'Welcome to your CloudOS workspace.\n' },
+    { id: 'projects', name: 'Projects', type: 'folder', parentId: null, size: '--', updated: 'Today' },
+    { id: 'notes', name: 'CloudOS-notes.md', type: 'text', parentId: null, size: '4 KB', updated: 'Yesterday', content: '# CloudOS notes\n\nYour workspace is live.\n' }
   ]
 };
 
@@ -41,7 +42,8 @@ state.settings = { ...defaultState.settings, ...(state.settings || {}) };
 state.organization = { ...defaultState.organization, ...(state.organization || {}) };
 state.organization.members = Array.isArray(state.organization.members) ? state.organization.members : structuredClone(defaultState.organization.members);
 state.auditLogs = Array.isArray(state.auditLogs) ? state.auditLogs : [];
-state.files = Array.isArray(state.files) ? state.files.map((file) => ({ ...file, content: file.content || '', versions: Array.isArray(file.versions) ? file.versions : [] })) : structuredClone(defaultState.files);
+state.shares = Array.isArray(state.shares) ? state.shares : [];
+state.files = Array.isArray(state.files) ? state.files.map((file) => ({ ...file, parentId: file.parentId || null, content: file.content || '', versions: Array.isArray(file.versions) ? file.versions : [] })) : structuredClone(defaultState.files);
 
 function saveState() {
   fs.mkdirSync(dataRoot, { recursive: true });
@@ -202,7 +204,8 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/files') {
-    sendJson(response, 200, { files: state.files });
+    const parentId = requestUrl.searchParams.get('parentId') || null;
+    sendJson(response, 200, { files: state.files.filter((file) => file.parentId === parentId), parentId });
     return;
   }
 
@@ -229,6 +232,46 @@ const server = http.createServer((request, response) => {
     const file = findFile(versionsMatch[1]);
     if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
     sendJson(response, 200, { versions: file.versions || [] });
+    return;
+  }
+
+  const restoreMatch = requestUrl.pathname.match(/^\/api\/files\/([^/]+)\/versions\/([^/]+)\/restore$/);
+  if (request.method === 'POST' && restoreMatch) {
+    const file = findFile(restoreMatch[1]);
+    const version = file?.versions?.find((item) => item.id === restoreMatch[2]);
+    if (!file || !version) { sendJson(response, 404, { error: 'Version not found' }); return; }
+    file.versions.unshift({ id: randomUUID(), content: file.content || '', createdAt: new Date().toISOString() });
+    file.content = version.content;
+    file.size = `${Math.max(1, Math.ceil(Buffer.byteLength(file.content) / 1024))} KB`;
+    file.updated = 'Just now';
+    recordAudit('File version restored', 'demo@cloudos.local', file.name);
+    saveState();
+    broadcast('file_updated', file);
+    sendJson(response, 200, file);
+    return;
+  }
+
+  const shareMatch = requestUrl.pathname.match(/^\/api\/files\/([^/]+)\/shares$/);
+  if (request.method === 'POST' && shareMatch) {
+    const file = findFile(shareMatch[1]);
+    if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
+    readBody(request, (error, payload) => {
+      if (error) { sendJson(response, 400, { error: error.message }); return; }
+      const share = { id: randomUUID(), token: randomUUID().replace(/-/g, '').slice(0, 12), fileId: file.id, permission: payload.permission === 'edit' ? 'edit' : 'view', createdAt: new Date().toISOString(), expiresAt: payload.expiresAt || null };
+      state.shares.push(share);
+      recordAudit('Share link created', 'demo@cloudos.local', file.name);
+      saveState();
+      sendJson(response, 201, { ...share, url: `/share/${share.token}` });
+    });
+    return;
+  }
+
+  const publicShareMatch = requestUrl.pathname.match(/^\/api\/shares\/([^/]+)$/);
+  if (request.method === 'GET' && publicShareMatch) {
+    const share = state.shares.find((item) => item.token === publicShareMatch[1]);
+    const file = share && findFile(share.fileId);
+    if (!share || !file || (share.expiresAt && new Date(share.expiresAt) < new Date())) { sendJson(response, 404, { error: 'Share link unavailable' }); return; }
+    sendJson(response, 200, { name: file.name, content: file.content, permission: share.permission, expiresAt: share.expiresAt });
     return;
   }
 
@@ -287,6 +330,7 @@ const server = http.createServer((request, response) => {
           id: randomUUID(),
           name: String(payload.name || 'Untitled.txt'),
           type: payload.type === 'folder' ? 'folder' : 'text',
+          parentId: payload.parentId || null,
           size: payload.content ? `${Math.max(1, Math.ceil(Buffer.byteLength(String(payload.content)) / 1024))} KB` : '--',
           updated: 'Just now',
           content: String(payload.content || ''),

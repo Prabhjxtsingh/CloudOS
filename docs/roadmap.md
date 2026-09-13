@@ -43,8 +43,11 @@ Add:
 - [x] session persistence across reconnects
 - [x] consistent file list after server restart
 - [x] lightweight file version history
+- [x] nested folder paths
+- [x] share links with view/edit permission
+- [x] restore previous versions
 
-Status: in progress. Files and session metadata are persisted to a local JSON store for development, with live file management and ten-version history. The next Phase 3 increment is folders with nested paths, sharing, and restoreable versions.
+Status: in progress. Files and session metadata are persisted to a local JSON store for development, with live file management, nested paths, share tokens, and ten-version history. The next Phase 3 increment is permission-aware sharing, trash/restore workflows, and object storage.
 
 Realtime foundation: the browser subscribes to server-sent events, so file creation, file edits, settings changes, and session changes are broadcast to connected CloudOS clients immediately.
 

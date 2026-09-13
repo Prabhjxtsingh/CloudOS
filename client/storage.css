@@ -10,11 +10,28 @@
 }
 
 .file-actions-inline button {
-  width: 24px;
+  width: 22px;
   height: 24px;
   border: 0;
   background: transparent;
   color: var(--muted);
+}
+
+.file-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.file-breadcrumb strong {
+  color: var(--ink);
+}
+
+.file-breadcrumb .text-button:last-child {
+  margin-left: auto;
 }
 
 .file-actions-inline button:hover {

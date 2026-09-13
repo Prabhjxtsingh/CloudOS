@@ -20,6 +20,8 @@ let toastTimer;
 let windowSequence = 0;
 let selectedFileId = 'notes';
 let eventSource;
+let currentFolderId = null;
+let currentFolderName = 'My files';
 
 const viewCopy = {
   overview: { title: 'Good morning, Dev.', eyebrow: '', secondaryTitle: '', description: '' },
@@ -43,7 +45,8 @@ async function startSession() {
 }
 
 async function loadFiles() {
-  const response = await fetch('/api/files');
+  const endpoint = currentFolderId ? `/api/files?parentId=${encodeURIComponent(currentFolderId)}` : '/api/files';
+  const response = await fetch(endpoint);
   if (!response.ok) throw new Error('Unable to load files');
   const payload = await response.json();
   renderFiles(payload.files);
@@ -54,16 +57,16 @@ function fileIcon(file) {
 }
 
 function fileMarkup(file, detailed = false) {
-  const actions = detailed ? `<span class="file-actions-inline"><button type="button" data-file-action="download" title="Download">↓</button><button type="button" data-file-action="rename" title="Rename">✎</button><button type="button" data-file-action="delete" title="Delete">×</button></span>` : '';
+  const actions = detailed ? `<span class="file-actions-inline"><button type="button" data-file-action="download" title="Download">↓</button><button type="button" data-file-action="share" title="Share">↗</button><button type="button" data-file-action="restore" title="Restore version">↺</button><button type="button" data-file-action="rename" title="Rename">✎</button><button type="button" data-file-action="delete" title="Delete">×</button></span>` : '';
   return `<div class="file-row ${detailed ? 'detailed' : ''}" data-file-id="${file.id}" tabindex="0"><span class="file-icon ${file.type}">${fileIcon(file)}</span><div class="file-name"><strong>${escapeHtml(file.name)}</strong><span>${file.type === 'folder' ? 'Folder' : 'Document'}</span></div>${detailed ? `<span class="file-meta">${file.size}</span><span class="file-meta">${file.updated}</span>${actions}` : `<span class="file-date">${file.updated}</span>`}</div>`;
 }
 
 function renderFiles(files) {
   fileList.innerHTML = files.slice(0, 4).map((file) => fileMarkup(file)).join('');
-  largeFileList.innerHTML = `<div class="file-actions"><button class="secondary-button" id="upload-file-button" type="button">↑ Upload</button><button class="secondary-button" id="new-folder-button" type="button">＋ Folder</button><input id="upload-file-input" type="file" hidden></div><div class="file-table-head"><span>Name</span><span>Size</span><span>Updated</span><span></span></div>${files.map((file) => fileMarkup(file, true)).join('')}`;
+  largeFileList.innerHTML = `<div class="file-breadcrumb"><button class="text-button" id="root-folder-button" type="button">My files</button>${currentFolderId ? `<span>/</span><strong>${escapeHtml(currentFolderName)}</strong><button class="text-button" id="up-folder-button" type="button">↑ Back</button>` : ''}</div><div class="file-actions"><button class="secondary-button" id="upload-file-button" type="button">↑ Upload</button><button class="secondary-button" id="new-folder-button" type="button">＋ Folder</button><input id="upload-file-input" type="file" hidden></div><div class="file-table-head"><span>Name</span><span>Size</span><span>Updated</span><span></span></div>${files.map((file) => fileMarkup(file, true)).join('')}`;
   const fileWindow = document.querySelector('[data-app-window="files"]');
   if (fileWindow) {
-    fileWindow.querySelector('.window-file-list').innerHTML = `<div class="file-actions"><button class="secondary-button window-upload-file" type="button">↑ Upload</button><button class="secondary-button window-new-folder" type="button">＋ Folder</button></div>${files.map((file) => fileMarkup(file, true)).join('')}`;
+    fileWindow.querySelector('.window-file-list').innerHTML = `<div class="file-breadcrumb"><button class="text-button window-root-folder" type="button">My files</button>${currentFolderId ? `<span>/ ${escapeHtml(currentFolderName)}</span><button class="text-button window-up-folder" type="button">↑ Back</button>` : ''}</div><div class="file-actions"><button class="secondary-button window-upload-file" type="button">↑ Upload</button><button class="secondary-button window-new-folder" type="button">＋ Folder</button></div>${files.map((file) => fileMarkup(file, true)).join('')}`;
     bindFileWindow(fileWindow);
   }
 }
@@ -216,12 +219,25 @@ function bindFileWindow(appWindow) {
   appWindow.querySelectorAll('.file-row').forEach((row) => row.setAttribute('role', 'button'));
   appWindow.querySelector('.window-new-folder')?.addEventListener('click', createFolder);
   appWindow.querySelector('.window-upload-file')?.addEventListener('click', () => document.querySelector('#upload-file-input')?.click());
+  appWindow.querySelector('.window-root-folder')?.addEventListener('click', () => { currentFolderId = null; currentFolderName = 'My files'; loadFiles(); });
+  appWindow.querySelector('.window-up-folder')?.addEventListener('click', goUpFolder);
 }
 
 function openFile(fileId) {
   selectedFileId = fileId;
-  if (findFileType(fileId) === 'text') openApp('editor');
-  else showToast('Folders are ready to browse in the Files app.');
+  if (findFileType(fileId) === 'folder') {
+    currentFolderId = fileId;
+    currentFolderName = document.querySelector(`[data-file-id="${fileId}"] strong`)?.textContent || 'Folder';
+    loadFiles();
+    return;
+  }
+  openApp('editor');
+}
+
+function goUpFolder() {
+  currentFolderId = null;
+  currentFolderName = 'My files';
+  loadFiles();
 }
 
 function findFileType(fileId) {
@@ -232,19 +248,43 @@ function findFileType(fileId) {
 async function createFolder() {
   const name = window.prompt('Folder name', 'New folder');
   if (!name) return;
-  const response = await fetch('/api/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type: 'folder' }) });
+  const response = await fetch('/api/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type: 'folder', parentId: currentFolderId }) });
   if (response.ok) { await loadFiles(); showToast(`${name} folder created.`); }
 }
 
 async function uploadSelectedFile(file) {
   if (!file) return;
   const content = await file.text();
-  const response = await fetch('/api/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: file.name, content }) });
+  const response = await fetch('/api/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: file.name, content, parentId: currentFolderId }) });
   if (response.ok) { await loadFiles(); showToast(`${file.name} uploaded to CloudOS.`); }
 }
 
 async function handleFileAction(fileId, action) {
   if (action === 'download') { window.location.href = `/api/files/${fileId}/download`; return; }
+  if (action === 'share') {
+    const permission = window.prompt('Share permission: view or edit', 'view');
+    if (!permission) return;
+    const response = await fetch(`/api/files/${fileId}/shares`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permission }) });
+    if (response.ok) {
+      const share = await response.json();
+      const url = `${window.location.origin}${share.url}`;
+      await navigator.clipboard?.writeText(url);
+      showToast(`Share link copied: ${url}`);
+    }
+    return;
+  }
+  if (action === 'restore') {
+    const versionsResponse = await fetch(`/api/files/${fileId}/versions`);
+    if (!versionsResponse.ok) return;
+    const versions = (await versionsResponse.json()).versions;
+    if (!versions.length) { showToast('No previous versions available.'); return; }
+    const choice = window.prompt(`Restore version number:\n${versions.map((version, index) => `${index + 1}. ${new Date(version.createdAt).toLocaleString()}`).join('\n')}`, '1');
+    const version = versions[Number(choice) - 1];
+    if (!version) return;
+    const response = await fetch(`/api/files/${fileId}/versions/${version.id}/restore`, { method: 'POST' });
+    if (response.ok) { await loadFiles(); showToast('Previous version restored.'); }
+    return;
+  }
   if (action === 'rename') {
     const currentName = document.querySelector(`[data-file-id="${fileId}"] strong`)?.textContent;
     const name = window.prompt('New file name', currentName);
@@ -367,6 +407,8 @@ document.addEventListener('click', (event) => {
   if (actionButton) handleFileAction(actionButton.closest('.file-row').dataset.fileId, actionButton.dataset.fileAction);
   if (event.target.matches('#new-folder-button')) createFolder();
   if (event.target.matches('#upload-file-button')) document.querySelector('#upload-file-input').click();
+  if (event.target.matches('#root-folder-button')) goUpFolder();
+  if (event.target.matches('#up-folder-button')) goUpFolder();
 });
 document.addEventListener('change', (event) => {
   if (event.target.matches('#upload-file-input')) {
