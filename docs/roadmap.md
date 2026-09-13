@@ -48,8 +48,12 @@ Add:
 - [x] restore previous versions
 - [x] Trash and restore workflow
 - [x] read-only share enforcement
+- [x] expiring share links
+- [x] revocable share links
+- [x] permanent deletion from Trash
+- [x] local object storage for file contents
 
-Status: in progress. Files and session metadata are persisted to a local JSON store for development, with live file management, nested paths, share tokens, permission-aware edits, Trash, and ten-version history. The next Phase 3 increment is expiring/revocable shares, permanent deletion, and object storage.
+Status: in progress. Metadata remains in a local JSON store while file contents are migrated into local object blobs. The next Phase 3 increment is object-store abstraction, retention policies, and production storage such as S3 or a compatible service.
 
 Realtime foundation: the browser subscribes to server-sent events, so file creation, file edits, settings changes, and session changes are broadcast to connected CloudOS clients immediately.
 

@@ -47,6 +47,14 @@
   font-weight: 800;
 }
 
+.trash-row .file-actions-inline button[data-file-action="trash-delete"] {
+  width: auto;
+  padding: 0 7px;
+  color: #b76547;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .file-actions {
   display: flex;
   justify-content: flex-end;

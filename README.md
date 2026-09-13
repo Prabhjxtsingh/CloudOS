@@ -117,7 +117,7 @@ CloudOS/
 
 ## Current status
 
-The local prototype now includes a Phase 2 web desktop shell, Phase 3 persistence and realtime layers, and the first business workspace foundation. Searchable app launcher, application windows, server-backed apps, live settings, upload/download, file management, nested folders, share links, permission-aware edits, version restore, Trash, organization members, roles, admin metrics, and audit events are available. The next platform step is expiring/revocable shares and object storage, followed by VM orchestration and WebRTC media streaming.
+The local prototype now includes a Phase 2 web desktop shell, Phase 3 persistence and realtime layers, and the first business workspace foundation. Searchable app launcher, application windows, server-backed apps, live settings, upload/download, file management, nested folders, share links, expiring/revocable permissions, version restore, Trash, permanent deletion, local object storage, organization members, roles, admin metrics, and audit events are available. The next platform step is production object storage and VM orchestration with WebRTC media streaming.
 
 ## Run locally
 

@@ -58,7 +58,7 @@ function fileIcon(file) {
 }
 
 function fileMarkup(file, detailed = false) {
-  const actions = detailed ? `<span class="file-actions-inline"><button type="button" data-file-action="download" title="Download">↓</button><button type="button" data-file-action="share" title="Share">↗</button><button type="button" data-file-action="restore" title="Restore version">↺</button><button type="button" data-file-action="rename" title="Rename">✎</button><button type="button" data-file-action="delete" title="Delete">×</button></span>` : '';
+  const actions = detailed ? `<span class="file-actions-inline"><button type="button" data-file-action="download" title="Download">↓</button><button type="button" data-file-action="share" title="Share">↗</button><button type="button" data-file-action="revoke-share" title="Revoke share">⊘</button><button type="button" data-file-action="restore" title="Restore version">↺</button><button type="button" data-file-action="rename" title="Rename">✎</button><button type="button" data-file-action="delete" title="Delete">×</button></span>` : '';
   return `<div class="file-row ${detailed ? 'detailed' : ''}" data-file-id="${file.id}" tabindex="0"><span class="file-icon ${file.type}">${fileIcon(file)}</span><div class="file-name"><strong>${escapeHtml(file.name)}</strong><span>${file.type === 'folder' ? 'Folder' : 'Document'}</span></div>${detailed ? `<span class="file-meta">${file.size}</span><span class="file-meta">${file.updated}</span>${actions}` : `<span class="file-date">${file.updated}</span>`}</div>`;
 }
 
@@ -267,16 +267,32 @@ async function handleFileAction(fileId, action) {
     if (response.ok) { await loadTrashView(); showToast('Item restored from Trash.'); }
     return;
   }
+  if (action === 'trash-delete' && window.confirm('Permanently delete this item?')) {
+    const response = await fetch(`/api/files/${fileId}?permanent=true`, { method: 'DELETE' });
+    if (response.ok) { await loadTrashView(); showToast('Item permanently deleted.'); }
+    return;
+  }
   if (action === 'share') {
     const permission = window.prompt('Share permission: view or edit', 'view');
     if (!permission) return;
-    const response = await fetch(`/api/files/${fileId}/shares`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permission }) });
+    const duration = window.prompt('Expiry in hours, or leave blank for no expiry', '24');
+    const expiresAt = duration ? new Date(Date.now() + Number(duration) * 60 * 60 * 1000).toISOString() : null;
+    const response = await fetch(`/api/files/${fileId}/shares`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ permission, expiresAt }) });
     if (response.ok) {
       const share = await response.json();
       const url = `${window.location.origin}${share.url}`;
       await navigator.clipboard?.writeText(url);
       showToast(`Share link copied: ${url}`);
     }
+    return;
+  }
+  if (action === 'revoke-share') {
+    const sharesResponse = await fetch(`/api/files/${fileId}/shares`);
+    if (!sharesResponse.ok) return;
+    const shares = (await sharesResponse.json()).shares.filter((share) => !share.revokedAt);
+    if (!shares.length) { showToast('No active share links for this file.'); return; }
+    const response = await fetch(`/api/shares/${shares[0].token}`, { method: 'DELETE' });
+    if (response.ok) showToast('Share link revoked.');
     return;
   }
   if (action === 'restore') {
@@ -348,7 +364,7 @@ async function loadTrashView() {
   const response = await fetch('/api/files?trashed=true');
   if (!response.ok) return;
   const payload = await response.json();
-  largeFileList.innerHTML = payload.files.length ? `<div class="file-table-head"><span>Name</span><span>Removed</span><span></span></div>${payload.files.map((file) => `<div class="file-row detailed trash-row" data-file-id="${file.id}"><span class="file-icon ${file.type}">${fileIcon(file)}</span><div class="file-name"><strong>${escapeHtml(file.name)}</strong><span>${file.type === 'folder' ? 'Folder' : 'Document'}</span></div><span class="file-meta">${new Date(file.trashedAt).toLocaleDateString()}</span><span class="file-actions-inline"><button type="button" data-file-action="trash-restore" title="Restore">↺ Restore</button></span></div>`).join('')}` : '<div class="empty-state"><span>♢</span><strong>Trash is empty.</strong><p>Removed files will stay here until restored.</p></div>';
+  largeFileList.innerHTML = payload.files.length ? `<div class="file-table-head"><span>Name</span><span>Removed</span><span></span></div>${payload.files.map((file) => `<div class="file-row detailed trash-row" data-file-id="${file.id}"><span class="file-icon ${file.type}">${fileIcon(file)}</span><div class="file-name"><strong>${escapeHtml(file.name)}</strong><span>${file.type === 'folder' ? 'Folder' : 'Document'}</span></div><span class="file-meta">${new Date(file.trashedAt).toLocaleDateString()}</span><span class="file-actions-inline"><button type="button" data-file-action="trash-restore" title="Restore">↺ Restore</button><button type="button" data-file-action="trash-delete" title="Delete permanently">× Delete</button></span></div>`).join('')}` : '<div class="empty-state"><span>♢</span><strong>Trash is empty.</strong><p>Removed files will stay here until restored.</p></div>';
 }
 
 function setView(view) {
