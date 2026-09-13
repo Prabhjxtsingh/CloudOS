@@ -10,7 +10,7 @@ const port = Number(process.env.PORT || 3000);
 const eventClients = new Set();
 const defaultState = {
   sessions: [],
-  settings: { workspaceName: 'Dev workspace', notifications: true, sessionPersistence: true },
+  settings: { workspaceName: 'Dev workspace', notifications: true, sessionPersistence: true, theme: 'light' },
   files: [
     { id: 'welcome', name: 'Welcome.txt', type: 'text', size: '1 KB', updated: 'Just now', content: 'Welcome to your CloudOS workspace.\n' },
     { id: 'projects', name: 'Projects', type: 'folder', size: '--', updated: 'Today' },

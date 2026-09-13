@@ -69,8 +69,19 @@ function connectRealtime() {
   eventSource = new EventSource('/api/events');
   eventSource.addEventListener('file_created', async (event) => { await loadFiles(); showToast(`${JSON.parse(event.data).name} was added from another session.`); });
   eventSource.addEventListener('file_updated', async (event) => { await loadFiles(); showToast(`${JSON.parse(event.data).name} was updated live.`); });
-  eventSource.addEventListener('settings_updated', (event) => { const settings = JSON.parse(event.data); viewTitle.textContent = `${settings.workspaceName} is live.`; });
+  eventSource.addEventListener('settings_updated', (event) => { const settings = JSON.parse(event.data); applyTheme(settings.theme); viewTitle.textContent = `${settings.workspaceName} is live.`; });
   eventSource.addEventListener('session', () => showToast('Session state updated live.'));
+}
+
+function applyTheme(theme) {
+  document.body.classList.toggle('night-mode', theme === 'dark');
+}
+
+async function loadSettings() {
+  const response = await fetch('/api/settings');
+  if (!response.ok) return;
+  const settings = await response.json();
+  applyTheme(settings.theme);
 }
 
 function escapeHtml(value) {
@@ -95,7 +106,7 @@ const appDefinitions = {
 function appContent(appName, windowId) {
   if (appName === 'terminal') return `<div class="terminal-output" id="terminal-output-${windowId}"><p>CloudOS Terminal <span>v0.1 local</span></p><p>Type <strong>help</strong> to see available commands.</p></div><form class="terminal-form" data-window="${windowId}"><span>dev@cloudos:~$</span><input type="text" autocomplete="off" aria-label="Terminal command"><button type="submit" aria-label="Run command">↵</button></form>`;
   if (appName === 'editor') return `<div class="editor-toolbar"><span class="editor-file-name">Loading file...</span><button type="button" class="text-button editor-save" data-window="${windowId}">Save note</button></div><textarea class="editor-input" id="editor-input-${windowId}" aria-label="Text editor">Loading file...</textarea>`;
-  if (appName === 'settings') return '<div class="window-settings"><label>Workspace name<input class="settings-workspace-name" value="Dev workspace"></label><label>Session persistence<input class="settings-persistence" type="checkbox" checked></label><label>Notifications<input class="settings-notifications" type="checkbox" checked></label><button class="secondary-button window-action" type="button">Apply changes</button></div>';
+  if (appName === 'settings') return '<div class="window-settings"><label>Workspace name<input class="settings-workspace-name" value="Dev workspace"></label><label>Appearance<select class="settings-theme"><option value="light">Day mode</option><option value="dark">Night mode</option></select></label><label>Session persistence<input class="settings-persistence" type="checkbox" checked></label><label>Notifications<input class="settings-notifications" type="checkbox" checked></label><button class="secondary-button window-action" type="button">Apply changes</button></div>';
   return `<div class="window-file-list">${largeFileList.innerHTML || '<p class="window-empty">Loading workspace files...</p>'}</div>`;
 }
 
@@ -215,13 +226,14 @@ async function bindSettings(appWindow) {
   if (settingsResponse.ok) {
     const settings = await settingsResponse.json();
     appWindow.querySelector('.settings-workspace-name').value = settings.workspaceName;
+    appWindow.querySelector('.settings-theme').value = settings.theme || 'light';
     appWindow.querySelector('.settings-persistence').checked = settings.sessionPersistence;
     appWindow.querySelector('.settings-notifications').checked = settings.notifications;
   }
   appWindow.querySelector('.window-action').addEventListener('click', async () => {
-    const settings = { workspaceName: appWindow.querySelector('.settings-workspace-name').value, sessionPersistence: appWindow.querySelector('.settings-persistence').checked, notifications: appWindow.querySelector('.settings-notifications').checked };
+    const settings = { workspaceName: appWindow.querySelector('.settings-workspace-name').value, theme: appWindow.querySelector('.settings-theme').value, sessionPersistence: appWindow.querySelector('.settings-persistence').checked, notifications: appWindow.querySelector('.settings-notifications').checked };
     const response = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
-    if (response.ok) showToast('Workspace preferences updated live.');
+    if (response.ok) { applyTheme(settings.theme); showToast('Workspace preferences updated live.'); }
   });
 }
 
@@ -257,6 +269,7 @@ loginForm.addEventListener('submit', async (event) => {
     loginScreen.hidden = true;
     desktop.hidden = false;
     await loadFiles();
+    await loadSettings();
     connectRealtime();
     showToast('Workspace ready. Your session is running.');
   } catch (error) {
