@@ -107,6 +107,7 @@ function openApp(appName) {
   if (existingWindow) {
     existingWindow.classList.remove('minimized');
     existingWindow.style.zIndex = ++windowSequence;
+    if (appName === 'editor') loadEditorFile(existingWindow);
     return;
   }
   const windowId = `window-${Date.now()}`;
@@ -128,7 +129,7 @@ function openApp(appName) {
   taskButton.addEventListener('click', () => { appWindow.classList.remove('minimized'); appWindow.style.zIndex = ++windowSequence; });
   runningApps.appendChild(taskButton);
   if (appName === 'terminal') bindTerminal(appWindow);
-  if (appName === 'editor') bindEditor(appWindow, windowId);
+  if (appName === 'editor') bindEditor(appWindow);
   if (appName === 'settings') bindSettings(appWindow);
   if (appName === 'files') bindFileWindow(appWindow);
 }
@@ -177,28 +178,31 @@ function bindTerminal(appWindow) {
   });
 }
 
-function bindEditor(appWindow, windowId) {
-  loadEditorFile(appWindow, windowId);
+function bindEditor(appWindow) {
+  loadEditorFile(appWindow);
   appWindow.querySelector('.editor-save').addEventListener('click', async () => {
-    const content = appWindow.querySelector(`#editor-input-${windowId}`).value;
+    const content = appWindow.querySelector('.editor-input').value;
     const response = await fetch(`/api/files/${selectedFileId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }) });
     if (response.ok) { await loadFiles(); showToast('Note saved to your workspace.'); }
   });
 }
 
-async function loadEditorFile(appWindow, windowId) {
+async function loadEditorFile(appWindow) {
   const response = await fetch(`/api/files/${selectedFileId}`);
   if (!response.ok) return;
   const payload = await response.json();
   appWindow.querySelector('.editor-file-name').textContent = payload.file.name;
-  appWindow.querySelector(`#editor-input-${windowId}`).value = payload.file.content || '';
+  appWindow.querySelector('.editor-input').value = payload.file.content || '';
 }
 
 function bindFileWindow(appWindow) {
-  appWindow.querySelectorAll('.file-row').forEach((row) => row.addEventListener('dblclick', () => {
-    selectedFileId = row.dataset.fileId;
-    if (findFileType(selectedFileId) === 'text') openApp('editor');
-  }));
+  appWindow.querySelectorAll('.file-row').forEach((row) => row.setAttribute('role', 'button'));
+}
+
+function openFile(fileId) {
+  selectedFileId = fileId;
+  if (findFileType(fileId) === 'text') openApp('editor');
+  else showToast('Folders are ready to browse in the Files app.');
 }
 
 function findFileType(fileId) {
@@ -282,6 +286,10 @@ document.querySelector('#new-file-button').addEventListener('click', async () =>
 });
 document.addEventListener('click', (event) => {
   if (event.target.matches('.launch-button')) openApp(event.target.dataset.app);
+});
+document.addEventListener('dblclick', (event) => {
+  const fileRow = event.target.closest('.file-row');
+  if (fileRow?.dataset.fileId) openFile(fileRow.dataset.fileId);
 });
 
 function updateClock() {
