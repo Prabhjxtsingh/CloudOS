@@ -1,0 +1,9 @@
+{
+  "name": "cloudos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A browser-first foundation for a server-hosted operating system.",
+  "scripts": {
+    "start": "node server/server.js"
+  }
+}

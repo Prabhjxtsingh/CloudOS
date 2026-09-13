@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#101b29">
+  <title>CloudOS</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="login-screen" id="login-screen">
+      <div class="login-art" aria-hidden="true">
+        <div class="signal-orbit orbit-one"></div>
+        <div class="signal-orbit orbit-two"></div>
+        <div class="signal-core">C</div>
+      </div>
+      <div class="login-panel">
+        <p class="eyebrow">REMOTE COMPUTING ENVIRONMENT</p>
+        <h1>Cloud<span>OS</span></h1>
+        <p class="login-copy">Your workspace, running somewhere better.</p>
+        <form id="login-form">
+          <label for="email">Workspace identity</label>
+          <input id="email" type="email" value="demo@cloudos.local" autocomplete="email" required>
+          <button class="primary-button" type="submit">Enter workspace <span>↗</span></button>
+        </form>
+        <p class="login-status" id="login-status">Local development environment ready</p>
+      </div>
+    </section>
+
+    <section class="desktop" id="desktop" hidden>
+      <header class="topbar">
+        <div class="brand-mark"><span class="brand-dot"></span> CloudOS</div>
+        <div class="session-status"><span class="status-dot"></span><span id="connection-label">Connected to local-dev</span></div>
+        <div class="topbar-actions">
+          <button class="icon-button" type="button" title="Search" aria-label="Search">⌕</button>
+          <button class="icon-button" type="button" title="Notifications" aria-label="Notifications">♢</button>
+          <button class="profile-button" type="button" title="Account">D</button>
+        </div>
+      </header>
+
+      <div class="desktop-body">
+        <aside class="sidebar">
+          <nav class="side-nav" aria-label="Primary navigation">
+            <button class="nav-item active" type="button" data-view="overview"><span>◈</span>Overview</button>
+            <button class="nav-item" type="button" data-view="files"><span>□</span>My files</button>
+            <button class="nav-item" type="button" data-view="apps"><span>⊞</span>Applications</button>
+            <button class="nav-item" type="button" data-view="activity"><span>◷</span>Activity</button>
+          </nav>
+          <div class="storage-card">
+            <div class="storage-heading"><span>Storage</span><strong>18%</strong></div>
+            <div class="storage-track"><span></span></div>
+            <p>18 GB of 100 GB used</p>
+          </div>
+          <button class="settings-link" type="button" data-view="settings"><span>⚙</span>Settings</button>
+        </aside>
+
+        <section class="workspace" id="workspace">
+          <div class="workspace-heading">
+            <div>
+              <p class="eyebrow">MONDAY, SEPTEMBER 14, 2026</p>
+              <h2 id="view-title">Good morning, Dev.</h2>
+            </div>
+            <div class="workspace-actions"><button class="secondary-button" id="new-file-button" type="button">＋ New file</button></div>
+          </div>
+
+          <div class="dashboard-grid" id="overview-view">
+            <article class="hero-card">
+              <div class="hero-card-content">
+                <p class="eyebrow">YOUR CLOUD DESKTOP</p>
+                <h3>A quiet place to<br><em>get things done.</em></h3>
+                <p>Everything you need is running in your personal workspace. Pick up where you left off from any device.</p>
+                <button class="light-button" id="open-files-button" type="button">Open my files <span>→</span></button>
+              </div>
+              <div class="hero-grid-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            </article>
+            <article class="metric-card"><div class="card-label">SESSION UPTIME <span>↗</span></div><strong>02:47:18</strong><p>Since your last connection</p><div class="sparkline"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+            <article class="metric-card warm"><div class="card-label">COMPUTE LOAD <span>◌</span></div><strong>24%</strong><p>2 of 8 vCPUs active</p><div class="load-bar"><span></span></div></article>
+            <article class="files-card" id="files-card"><div class="card-heading"><div><p class="eyebrow">RECENT FILES</p><h3>Workspace</h3></div><button class="text-button" id="view-files-button" type="button">View all →</button></div><div class="file-list" id="file-list"></div></article>
+            <article class="activity-card"><div class="card-heading"><div><p class="eyebrow">ACTIVITY</p><h3>What’s happening</h3></div></div><div class="activity-item"><span class="activity-icon green">↗</span><div><strong>Session resumed</strong><p>Connected from local-dev</p></div><time>Now</time></div><div class="activity-item"><span class="activity-icon blue">□</span><div><strong>CloudOS-notes.md</strong><p>Edited in workspace</p></div><time>Yesterday</time></div><div class="activity-item"><span class="activity-icon orange">⊞</span><div><strong>System update</strong><p>Workspace is up to date</p></div><time>Sep 12</time></div></article>
+          </div>
+
+          <div class="secondary-view" id="secondary-view" hidden>
+            <div class="view-header"><div><p class="eyebrow" id="secondary-eyebrow">FILES</p><h3 id="secondary-title">My files</h3></div><p id="secondary-description">Persistent storage for your cloud workspace.</p></div>
+            <div class="large-file-list" id="large-file-list"></div>
+          </div>
+        </section>
+      </div>
+
+      <footer class="taskbar"><div class="taskbar-left"><button class="launcher-button" type="button" title="Open launcher" aria-label="Open launcher">C</button><span class="taskbar-divider"></span><button class="task-app active" type="button">◈ Overview</button></div><div class="taskbar-right"><span>⌁ 24 ms</span><span>◒ 72°F</span><time id="clock">10:42 AM</time></div></footer>
+    </section>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
