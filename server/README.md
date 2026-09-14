@@ -46,6 +46,24 @@ CLOUDOS_STORAGE_PROVIDER=local
 
 The metadata remains in `data/cloudos-state.json`, while content blobs live under `data/objects/`. A production S3-compatible adapter can now be added behind the same provider contract without changing the Files API.
 
+S3-compatible storage is available with the following settings:
+
+```text
+CLOUDOS_STORAGE_PROVIDER=s3
+CLOUDOS_S3_BUCKET=cloudos
+CLOUDOS_S3_REGION=us-east-1
+CLOUDOS_S3_ENDPOINT=http://localhost:9000       # optional for AWS; useful for MinIO
+CLOUDOS_S3_ACCESS_KEY_ID=...
+CLOUDOS_S3_SECRET_ACCESS_KEY=...
+CLOUDOS_S3_PREFIX=objects                       # optional
+CLOUDOS_S3_FORCE_PATH_STYLE=true                # required by many MinIO setups
+CLOUDOS_TRASH_RETENTION_DAYS=30                 # optional Trash retention window
+CLOUDOS_CLEANUP_INTERVAL_MS=3600000             # optional cleanup cadence
+```
+
+The adapter uses `HeadObject`, `GetObject`, `PutObject`, and `DeleteObject`, so the configured identity needs object read, write, and delete permissions for the bucket prefix.
+
+Trash cleanup runs at startup and on the configured interval. Expired items are permanently removed from metadata and object storage, their share links are revoked, and a system audit event is recorded.
 ## Recommended language choice
 
 For the first serious implementation, prefer:

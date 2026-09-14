@@ -5,5 +5,8 @@
   "description": "A browser-first foundation for a server-hosted operating system.",
   "scripts": {
     "start": "node server/server.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1131.0"
   }
 }

@@ -32,7 +32,9 @@ Add:
 - [x] terminal window
 - [x] text editor window
 
-Status: in progress. The local shell now has launchable application windows, taskbar restore and close controls, terminal commands, editor persistence, and a searchable launcher. The next Phase 2 increment is richer window behavior such as dragging, resize handles, and keyboard shortcuts.
+Status: in progress. The local shell now has launchable application windows, taskbar restore and close controls, terminal commands, editor persistence, a searchable launcher, dragging, native resize, and keyboard shortcuts. The next platform stage is the S3-compatible storage provider.
+
+Window behavior milestone: dragging and native resize are available, and `Alt+Tab`, `Ctrl+Space`, `Ctrl+W`, and `Ctrl+Alt+T` provide keyboard window control.
 
 ## Phase 3 — Storage and session persistence
 
@@ -52,8 +54,10 @@ Add:
 - [x] revocable share links
 - [x] permanent deletion from Trash
 - [x] local object storage for file contents
+- [x] S3-compatible object storage provider
+- [x] configurable Trash retention and background cleanup
 
-Status: in progress. Metadata remains in a local JSON store while file contents use a provider abstraction and local object blobs. The next Phase 3 increment is an S3-compatible provider, retention policies, and background cleanup.
+Status: in progress. Metadata remains in a local JSON store while file contents use a selectable local or S3-compatible provider. The next Phase 3 increment is durable metadata storage beyond the local JSON state file.
 
 Realtime foundation: the browser subscribes to server-sent events, so file creation, file edits, settings changes, and session changes are broadcast to connected CloudOS clients immediately.
 

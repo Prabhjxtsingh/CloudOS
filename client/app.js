@@ -140,7 +140,7 @@ function openApp(appName) {
   windowLayer.appendChild(appWindow);
   appWindow.addEventListener('pointerdown', () => { appWindow.style.zIndex = ++windowSequence; });
   bindWindowMovement(appWindow);
-  appWindow.querySelector('.window-close').addEventListener('click', () => { appWindow.remove(); document.querySelector(`[data-running-app="${appName}"]`)?.remove(); });
+  appWindow.querySelector('.window-close').addEventListener('click', () => closeAppWindow(appWindow));
   appWindow.querySelector('.window-minimize').addEventListener('click', () => { appWindow.classList.add('minimized'); });
   const taskButton = document.createElement('button');
   taskButton.className = 'task-app running-app';
@@ -153,6 +153,24 @@ function openApp(appName) {
   if (appName === 'editor') bindEditor(appWindow);
   if (appName === 'settings') bindSettings(appWindow);
   if (appName === 'files') bindFileWindow(appWindow);
+}
+
+function closeAppWindow(appWindow) {
+  const appName = appWindow.dataset.appWindow;
+  appWindow.remove();
+  document.querySelector(`[data-running-app="${appName}"]`)?.remove();
+}
+
+function visibleWindows() {
+  return [...windowLayer.querySelectorAll('.app-window:not(.minimized)')].sort((left, right) => Number(left.style.zIndex) - Number(right.style.zIndex));
+}
+
+function cycleWindows() {
+  const windows = visibleWindows();
+  if (windows.length < 2) return;
+  const nextWindow = windows[0];
+  nextWindow.style.zIndex = ++windowSequence;
+  nextWindow.scrollIntoView({ block: 'nearest' });
 }
 
 function bindWindowMovement(appWindow) {
@@ -421,8 +439,21 @@ document.querySelector('.close-launcher').addEventListener('click', closeLaunche
 document.querySelectorAll('.launcher-app').forEach((button) => button.addEventListener('click', () => openApp(button.dataset.app)));
 appSearch.addEventListener('input', () => { const query = appSearch.value.toLowerCase(); document.querySelectorAll('.launcher-app').forEach((app) => { app.hidden = !app.textContent.toLowerCase().includes(query); }); });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') closeLauncher();
+  if (event.key === 'Escape') {
+    closeLauncher();
+    return;
+  }
   if (event.ctrlKey && event.altKey && event.key.toLowerCase() === 't') { event.preventDefault(); openApp('terminal'); }
+  if (event.altKey && event.key === 'Tab') { event.preventDefault(); cycleWindows(); }
+  if (event.ctrlKey && event.key.toLowerCase() === 'w' && visibleWindows().length) {
+    event.preventDefault();
+    closeAppWindow(visibleWindows().at(-1));
+  }
+  if (event.ctrlKey && event.key === ' ') {
+    event.preventDefault();
+    const activeWindow = visibleWindows().at(-1);
+    if (activeWindow) activeWindow.classList.add('minimized');
+  }
 });
 document.querySelector('#new-file-button').addEventListener('click', async () => {
   const name = window.prompt('Name your new file', 'Untitled.txt');

@@ -10,6 +10,8 @@ const objectRoot = path.join(dataRoot, 'objects');
 const statePath = path.join(dataRoot, 'cloudos-state.json');
 const storage = createStorage({ root: objectRoot });
 const port = Number(process.env.PORT || 3000);
+const trashRetentionDays = Math.max(1, Number(process.env.CLOUDOS_TRASH_RETENTION_DAYS || 30));
+const cleanupIntervalMs = Math.max(60_000, Number(process.env.CLOUDOS_CLEANUP_INTERVAL_MS || 3_600_000));
 const eventClients = new Set();
 const defaultState = {
   sessions: [],
@@ -47,9 +49,9 @@ state.organization.members = Array.isArray(state.organization.members) ? state.o
 state.auditLogs = Array.isArray(state.auditLogs) ? state.auditLogs : [];
 state.shares = Array.isArray(state.shares) ? state.shares : [];
 state.files = Array.isArray(state.files) ? state.files.map((file) => ({ ...file, objectKey: file.objectKey || file.id, parentId: file.parentId || null, trashedAt: file.trashedAt || null, content: file.content || '', versions: Array.isArray(file.versions) ? file.versions : [] })) : structuredClone(defaultState.files);
-for (const file of state.files) {
-  if (!storage.exists(objectPath(file))) writeObjectContent(file, file.content || '');
-}
+const storageReady = Promise.all(state.files.map(async (file) => {
+  if (!await storage.exists(objectPath(file))) await writeObjectContent(file, file.content || '');
+}));
 
 function saveState() {
   fs.mkdirSync(dataRoot, { recursive: true });
@@ -60,16 +62,33 @@ function objectPath(file) {
   return file.objectKey || file.id;
 }
 
-function readObjectContent(file) {
+async function readObjectContent(file) {
   try {
-    return storage.read(objectPath(file));
+    return await storage.read(objectPath(file));
   } catch {
     return file.content || '';
   }
 }
 
-function writeObjectContent(file, content) {
-  storage.write(objectPath(file), content);
+async function writeObjectContent(file, content) {
+  await storage.write(objectPath(file), content);
+}
+
+async function cleanupExpiredTrash() {
+  await storageReady;
+  const cutoff = Date.now() - trashRetentionDays * 24 * 60 * 60 * 1000;
+  const expiredFiles = state.files.filter((file) => file.trashedAt && new Date(file.trashedAt).getTime() <= cutoff);
+  if (!expiredFiles.length) return 0;
+
+  for (const file of expiredFiles) {
+    await storage.remove(objectPath(file));
+    state.shares = state.shares.filter((share) => share.fileId !== file.id);
+    recordAudit('Trash retention cleanup', 'system', `${file.name} removed after ${trashRetentionDays} days`);
+  }
+  state.files = state.files.filter((file) => !expiredFiles.includes(file));
+  saveState();
+  for (const file of expiredFiles) broadcast('file_deleted', { id: file.id, name: file.name, reason: 'retention' });
+  return expiredFiles.length;
 }
 
 function sendJson(response, statusCode, body) {
@@ -133,11 +152,12 @@ function serveFile(response, pathname) {
   });
 }
 
-const server = http.createServer((request, response) => {
+const server = http.createServer(async (request, response) => {
+  await storageReady;
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/health') {
-    sendJson(response, 200, { status: 'ok', service: 'cloudos-local', storage: storage.name });
+    sendJson(response, 200, { status: 'ok', service: 'cloudos-local', storage: storage.name, trashRetentionDays });
     return;
   }
 
@@ -193,7 +213,8 @@ const server = http.createServer((request, response) => {
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/admin/summary') {
     const activeSessions = state.sessions.filter((session) => session.status === 'running').length;
-    const storageBytes = state.files.reduce((total, file) => total + Buffer.byteLength(readObjectContent(file)), 0);
+    const storageContents = await Promise.all(state.files.map((file) => readObjectContent(file)));
+    const storageBytes = storageContents.reduce((total, content) => total + Buffer.byteLength(content), 0);
     sendJson(response, 200, {
       organization: state.organization,
       metrics: { users: state.organization.members.length, activeUsers: activeSessions, cloudPcs: activeSessions, storageBytes, auditEvents: state.auditLogs.length },
@@ -208,7 +229,7 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'POST' && requestUrl.pathname === '/api/organization/members') {
-    readBody(request, (error, payload) => {
+    readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       const email = String(payload.email || '').trim().toLowerCase();
       const name = String(payload.name || '').trim();
@@ -246,7 +267,7 @@ const server = http.createServer((request, response) => {
     const file = findFile(downloadMatch[1]);
     if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
     response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': `attachment; filename="${file.name}"` });
-    response.end(readObjectContent(file));
+    response.end(await readObjectContent(file));
     return;
   }
 
@@ -263,9 +284,9 @@ const server = http.createServer((request, response) => {
     const file = findFile(restoreMatch[1]);
     const version = file?.versions?.find((item) => item.id === restoreMatch[2]);
     if (!file || !version) { sendJson(response, 404, { error: 'Version not found' }); return; }
-    file.versions.unshift({ id: randomUUID(), content: readObjectContent(file), createdAt: new Date().toISOString() });
+    file.versions.unshift({ id: randomUUID(), content: await readObjectContent(file), createdAt: new Date().toISOString() });
     file.content = version.content;
-    writeObjectContent(file, file.content);
+    await writeObjectContent(file, file.content);
     file.size = `${Math.max(1, Math.ceil(Buffer.byteLength(file.content) / 1024))} KB`;
     file.updated = 'Just now';
     recordAudit('File version restored', 'demo@cloudos.local', file.name);
@@ -284,7 +305,7 @@ const server = http.createServer((request, response) => {
   if (request.method === 'POST' && shareMatch) {
     const file = findFile(shareMatch[1]);
     if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
-    readBody(request, (error, payload) => {
+    readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       const share = { id: randomUUID(), token: randomUUID().replace(/-/g, '').slice(0, 12), fileId: file.id, permission: payload.permission === 'edit' ? 'edit' : 'view', createdAt: new Date().toISOString(), expiresAt: payload.expiresAt || null, revokedAt: null };
       state.shares.push(share);
@@ -300,7 +321,7 @@ const server = http.createServer((request, response) => {
     const share = state.shares.find((item) => item.token === publicShareMatch[1]);
     const file = share && findFile(share.fileId);
     if (!share || !file || share.revokedAt || (share.expiresAt && new Date(share.expiresAt) < new Date())) { sendJson(response, 404, { error: 'Share link unavailable' }); return; }
-    sendJson(response, 200, { name: file.name, content: readObjectContent(file), permission: share.permission, expiresAt: share.expiresAt });
+    sendJson(response, 200, { name: file.name, content: await readObjectContent(file), permission: share.permission, expiresAt: share.expiresAt });
     return;
   }
 
@@ -308,18 +329,18 @@ const server = http.createServer((request, response) => {
     const share = state.shares.find((item) => item.token === publicShareMatch[1]);
     const file = share && findFile(share.fileId);
     if (!share || !file || share.revokedAt || (share.expiresAt && new Date(share.expiresAt) < new Date()) || share.permission !== 'edit') { sendJson(response, 403, { error: 'This share is unavailable or read-only' }); return; }
-    readBody(request, (error, payload) => {
+    readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
-      file.versions.unshift({ id: randomUUID(), content: readObjectContent(file), createdAt: new Date().toISOString() });
+      file.versions.unshift({ id: randomUUID(), content: await readObjectContent(file), createdAt: new Date().toISOString() });
       file.versions = file.versions.slice(0, 10);
       file.content = String(payload.content || '');
-      writeObjectContent(file, file.content);
+      await writeObjectContent(file, file.content);
       file.size = `${Math.max(1, Math.ceil(Buffer.byteLength(file.content) / 1024))} KB`;
       file.updated = 'Just now';
       recordAudit('Shared file edited', 'share-link', file.name);
       saveState();
       broadcast('file_updated', file);
-      sendJson(response, 200, { name: file.name, content: readObjectContent(file), permission: share.permission });
+      sendJson(response, 200, { name: file.name, content: await readObjectContent(file), permission: share.permission });
     });
     return;
   }
@@ -335,7 +356,7 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'PATCH' && fileMatch) {
-    readBody(request, (error, payload) => {
+    readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       const file = findFile(fileMatch[1]);
       if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
@@ -356,7 +377,7 @@ const server = http.createServer((request, response) => {
     if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
     if (requestUrl.searchParams.get('permanent') === 'true') {
       state.files = state.files.filter((item) => item.id !== file.id);
-      storage.remove(objectPath(file));
+      await storage.remove(objectPath(file));
       recordAudit('File permanently deleted', 'demo@cloudos.local', file.name);
       saveState();
       broadcast('file_deleted', { id: file.id, name: file.name });
@@ -384,15 +405,15 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'PUT' && fileMatch) {
-    readBody(request, (error, payload) => {
+    readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       const file = findFile(fileMatch[1]);
       if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
       file.versions = Array.isArray(file.versions) ? file.versions : [];
-      file.versions.unshift({ id: randomUUID(), content: readObjectContent(file), createdAt: new Date().toISOString() });
+      file.versions.unshift({ id: randomUUID(), content: await readObjectContent(file), createdAt: new Date().toISOString() });
       file.versions = file.versions.slice(0, 10);
       file.content = String(payload.content || '');
-      writeObjectContent(file, file.content);
+      await writeObjectContent(file, file.content);
       file.size = `${Math.max(1, Math.ceil(Buffer.byteLength(file.content) / 1024))} KB`;
       file.updated = 'Just now';
       recordAudit('File updated', 'demo@cloudos.local', file.name);
@@ -404,7 +425,7 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'POST' && requestUrl.pathname === '/api/files') {
-    readBody(request, (error, payload) => {
+    readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       try {
         const file = {
@@ -418,7 +439,7 @@ const server = http.createServer((request, response) => {
           content: String(payload.content || ''),
           versions: []
         };
-        writeObjectContent(file, file.content);
+        await writeObjectContent(file, file.content);
         state.files.unshift(file);
         saveState();
         recordAudit(file.type === 'folder' ? 'Folder created' : 'File created', 'demo@cloudos.local', file.name);
@@ -437,7 +458,7 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'PUT' && requestUrl.pathname === '/api/settings') {
-    readBody(request, (error, payload) => {
+    readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       state.settings = { ...state.settings, ...payload, workspaceName: String(payload.workspaceName || state.settings.workspaceName) };
       saveState();
@@ -448,7 +469,7 @@ const server = http.createServer((request, response) => {
   }
 
   if (request.method === 'POST' && requestUrl.pathname === '/api/terminal') {
-    readBody(request, (error, payload) => {
+    readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       const command = String(payload.command || '').trim();
       const outputs = {
@@ -474,4 +495,9 @@ const server = http.createServer((request, response) => {
 
 server.listen(port, () => {
   console.log(`CloudOS is running at http://localhost:${port}`);
+  cleanupExpiredTrash().catch((error) => console.error('Trash cleanup failed:', error));
+  const cleanupTimer = setInterval(() => {
+    cleanupExpiredTrash().catch((error) => console.error('Trash cleanup failed:', error));
+  }, cleanupIntervalMs);
+  cleanupTimer.unref();
 });
