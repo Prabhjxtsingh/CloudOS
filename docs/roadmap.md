@@ -75,11 +75,14 @@ Business MVP foundation:
 - [x] team members and roles
 - [x] admin usage summary
 - [x] audit event trail
-- [ ] authentication hardening and MFA
+- [x] password authentication and signed sessions
+- [x] authenticated API route protection
+- [x] owner/admin role enforcement for organization administration
+- [ ] MFA
 - [ ] organization-level storage permissions
 - [ ] application policy management
 
-Status: in progress. CloudOS now has a persisted organization, member invitations, owner/admin/member/viewer roles, admin metrics, and audit events. VM isolation, billing, SSO, and compliance remain infrastructure milestones rather than local prototype features.
+Status: in progress. CloudOS now has password authentication, signed expiring sessions, protected API routes, persisted organization membership, owner/admin/member/viewer roles, admin metrics, and audit events. MFA, VM isolation, billing, SSO, and compliance remain infrastructure milestones rather than local prototype features.
 
 ## Phase 5 — Multi-user virtualization
 

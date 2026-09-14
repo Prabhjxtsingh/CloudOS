@@ -1,7 +1,8 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
+const crypto = require('crypto');
+const { randomUUID } = crypto;
 const { createStorage } = require('./storage');
 
 const clientRoot = path.join(__dirname, '..', 'client');
@@ -12,8 +13,13 @@ const storage = createStorage({ root: objectRoot });
 const port = Number(process.env.PORT || 3000);
 const trashRetentionDays = Math.max(1, Number(process.env.CLOUDOS_TRASH_RETENTION_DAYS || 30));
 const cleanupIntervalMs = Math.max(60_000, Number(process.env.CLOUDOS_CLEANUP_INTERVAL_MS || 3_600_000));
+const authSecret = process.env.CLOUDOS_AUTH_SECRET || 'cloudos-local-development-secret';
+const sessionTtlSeconds = Math.max(300, Number(process.env.CLOUDOS_SESSION_TTL_SECONDS || 86_400));
 const eventClients = new Set();
 const defaultState = {
+  users: [
+    { id: 'user-dev', name: 'Dev User', email: 'demo@cloudos.local', passwordHash: '251b09c168dcc9eb24ea3a7b6233d32e:170f36496a88c245f0035309304bac2ef11447be5f1ad596bcfdad2a3df063b3f5a6c6a5103df0109d678e9e1f83191e13a65248d026fad3ca0da420f3b3b746', memberId: 'member-dev' }
+  ],
   sessions: [],
   settings: { workspaceName: 'Dev workspace', notifications: true, sessionPersistence: true, theme: 'light' },
   organization: {
@@ -42,6 +48,7 @@ function loadState() {
 }
 
 let state = loadState();
+state.users = Array.isArray(state.users) && state.users.length ? state.users : structuredClone(defaultState.users);
 state.sessions = Array.isArray(state.sessions) ? state.sessions : [];
 state.settings = { ...defaultState.settings, ...(state.settings || {}) };
 state.organization = { ...defaultState.organization, ...(state.organization || {}) };
@@ -56,6 +63,60 @@ const storageReady = Promise.all(state.files.map(async (file) => {
 function saveState() {
   fs.mkdirSync(dataRoot, { recursive: true });
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  return `${salt}:${crypto.scryptSync(password, salt, 64).toString('hex')}`;
+}
+
+function verifyPassword(password, storedHash) {
+  const [salt, expectedHex] = String(storedHash || '').split(':');
+  if (!salt || !expectedHex) return false;
+  const actual = crypto.scryptSync(password, salt, 64);
+  const expected = Buffer.from(expectedHex, 'hex');
+  return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
+}
+
+function signSession(email) {
+  const payload = Buffer.from(JSON.stringify({ email, exp: Math.floor(Date.now() / 1000) + sessionTtlSeconds })).toString('base64url');
+  const signature = crypto.createHmac('sha256', authSecret).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function verifySession(token) {
+  if (!token) return null;
+  const [payload, signature] = token.split('.');
+  if (!payload || !signature) return null;
+  const expected = crypto.createHmac('sha256', authSecret).update(payload).digest('base64url');
+  if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    const user = state.users.find((item) => item.email === claims.email);
+    const member = state.organization.members.find((item) => item.email === claims.email);
+    return user && member ? { ...user, role: member.role } : null;
+  } catch {
+    return null;
+  }
+}
+
+function cookieValue(request, name) {
+  const cookies = String(request.headers.cookie || '').split(';');
+  const cookie = cookies.find((item) => item.trim().startsWith(`${name}=`));
+  return cookie ? decodeURIComponent(cookie.trim().slice(name.length + 1)) : null;
+}
+
+function authenticatedUser(request) {
+  const authorization = String(request.headers.authorization || '');
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : cookieValue(request, 'cloudos_session');
+  return verifySession(token);
+}
+
+function requireRole(request, response, roles) {
+  if (!roles.includes(request.user.role)) {
+    sendJson(response, 403, { error: 'Insufficient permissions' });
+    return false;
+  }
+  return true;
 }
 
 function objectPath(file) {
@@ -161,6 +222,39 @@ const server = http.createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === 'POST' && requestUrl.pathname === '/api/auth/login') {
+    readBody(request, (error, payload) => {
+      if (error) { sendJson(response, 400, { error: error.message }); return; }
+      const email = String(payload.email || '').trim().toLowerCase();
+      const password = String(payload.password || '');
+      const user = state.users.find((item) => item.email === email);
+      if (!user || !verifyPassword(password, user.passwordHash)) {
+        sendJson(response, 401, { error: 'Invalid email or password' });
+        return;
+      }
+      const member = state.organization.members.find((item) => item.email === email);
+      response.setHeader('Set-Cookie', `cloudos_session=${encodeURIComponent(signSession(email))}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${sessionTtlSeconds}`);
+      recordAudit('User signed in', email, 'Authenticated session created');
+      sendJson(response, 200, { user: { id: user.id, name: user.name, email: user.email, role: member?.role || 'member' } });
+    });
+    return;
+  }
+
+  if (request.method === 'POST' && requestUrl.pathname === '/api/auth/logout') {
+    response.setHeader('Set-Cookie', 'cloudos_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+    sendJson(response, 200, { loggedOut: true });
+    return;
+  }
+
+  const publicShareRequest = requestUrl.pathname.match(/^\/api\/shares\/[^/]+$/) && request.method !== 'DELETE';
+  if (requestUrl.pathname.startsWith('/api/') && !publicShareRequest) {
+    request.user = authenticatedUser(request);
+    if (!request.user) {
+      sendJson(response, 401, { error: 'Authentication required' });
+      return;
+    }
+  }
+
   if (request.method === 'GET' && requestUrl.pathname === '/api/events') {
     response.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -175,8 +269,8 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === 'POST' && requestUrl.pathname === '/api/sessions') {
     const requestedId = requestUrl.searchParams.get('id');
-    const requestedUser = requestUrl.searchParams.get('email') || 'demo@cloudos.local';
-    const existingSession = state.sessions.find((session) => session.id === requestedId);
+    const requestedUser = request.user.email;
+    const existingSession = state.sessions.find((session) => session.id === requestedId && session.user === requestedUser);
     const session = existingSession || {
       id: randomUUID(),
       user: requestedUser,
@@ -200,8 +294,7 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/me') {
-    const email = requestUrl.searchParams.get('email') || 'demo@cloudos.local';
-    const member = state.organization.members.find((item) => item.email === email) || state.organization.members[0];
+    const member = state.organization.members.find((item) => item.email === request.user.email);
     sendJson(response, 200, { user: member, organizationId: state.organization.id });
     return;
   }
@@ -212,6 +305,7 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/admin/summary') {
+    if (!requireRole(request, response, ['owner', 'admin'])) return;
     const activeSessions = state.sessions.filter((session) => session.status === 'running').length;
     const storageContents = await Promise.all(state.files.map((file) => readObjectContent(file)));
     const storageBytes = storageContents.reduce((total, content) => total + Buffer.byteLength(content), 0);
@@ -224,11 +318,13 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/audit') {
+    if (!requireRole(request, response, ['owner', 'admin'])) return;
     sendJson(response, 200, { events: state.auditLogs.slice(0, 30) });
     return;
   }
 
   if (request.method === 'POST' && requestUrl.pathname === '/api/organization/members') {
+    if (!requireRole(request, response, ['owner', 'admin'])) return;
     readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       const email = String(payload.email || '').trim().toLowerCase();

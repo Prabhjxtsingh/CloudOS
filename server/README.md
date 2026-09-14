@@ -46,6 +46,17 @@ CLOUDOS_STORAGE_PROVIDER=local
 
 The metadata remains in `data/cloudos-state.json`, while content blobs live under `data/objects/`. A production S3-compatible adapter can now be added behind the same provider contract without changing the Files API.
 
+## Authentication
+
+API routes require an authenticated signed session cookie. Local development seeds the following account:
+
+```text
+Email: demo@cloudos.local
+Password: demo
+```
+
+Set `CLOUDOS_AUTH_SECRET` to a long random value outside local development. Sessions expire according to `CLOUDOS_SESSION_TTL_SECONDS` (one day by default). The organization and admin endpoints require an owner or admin role.
+
 S3-compatible storage is available with the following settings:
 
 ```text

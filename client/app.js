@@ -35,9 +35,12 @@ const viewCopy = {
 };
 
 async function startSession() {
-  const savedSessionId = window.localStorage.getItem('cloudos-session-id');
   const email = document.querySelector('#email').value;
-  const endpoint = savedSessionId ? `/api/sessions?id=${encodeURIComponent(savedSessionId)}&email=${encodeURIComponent(email)}` : `/api/sessions?email=${encodeURIComponent(email)}`;
+  const password = document.querySelector('#password').value;
+  const loginResponse = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+  if (!loginResponse.ok) throw new Error('Invalid email or password');
+  const savedSessionId = window.localStorage.getItem('cloudos-session-id');
+  const endpoint = savedSessionId ? `/api/sessions?id=${encodeURIComponent(savedSessionId)}` : '/api/sessions';
   const response = await fetch(endpoint, { method: 'POST' });
   if (!response.ok) throw new Error('Unable to start session');
   const session = await response.json();
@@ -430,7 +433,7 @@ loginForm.addEventListener('submit', async (event) => {
     connectRealtime();
     showToast('Workspace ready. Your session is running.');
   } catch (error) {
-    loginStatus.textContent = 'Could not connect. Is the local server running?';
+    loginStatus.textContent = error.message === 'Invalid email or password' ? error.message : 'Could not connect. Is the local server running?';
   }
 });
 
