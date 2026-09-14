@@ -46,6 +46,8 @@ CLOUDOS_STORAGE_PROVIDER=local
 
 The metadata remains in `data/cloudos-state.json`, while content blobs live under `data/objects/`. A production S3-compatible adapter can now be added behind the same provider contract without changing the Files API.
 
+Metadata writes use a flushed temporary file followed by an atomic rename. The previous state is retained at `data/cloudos-state.json.bak`, and startup falls back to that backup if the primary file is missing or invalid. This protects the local prototype from partial writes; a multi-instance deployment still needs a transactional database.
+
 ## Authentication
 
 API routes require an authenticated signed session cookie. Local development seeds the following account:

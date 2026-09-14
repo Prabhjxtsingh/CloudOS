@@ -9,6 +9,7 @@ const clientRoot = path.join(__dirname, '..', 'client');
 const dataRoot = path.join(__dirname, '..', 'data');
 const objectRoot = path.join(dataRoot, 'objects');
 const statePath = path.join(dataRoot, 'cloudos-state.json');
+const stateBackupPath = `${statePath}.bak`;
 const storage = createStorage({ root: objectRoot });
 const port = Number(process.env.PORT || 3000);
 const trashRetentionDays = Math.max(1, Number(process.env.CLOUDOS_TRASH_RETENTION_DAYS || 30));
@@ -46,11 +47,14 @@ const defaultState = {
 };
 
 function loadState() {
-  try {
-    return JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  } catch {
-    return structuredClone(defaultState);
+  for (const candidate of [statePath, stateBackupPath]) {
+    try {
+      return JSON.parse(fs.readFileSync(candidate, 'utf8'));
+    } catch {
+      // Try the backup when the primary state file is missing or incomplete.
+    }
   }
+  return structuredClone(defaultState);
 }
 
 let state = loadState();
@@ -68,7 +72,17 @@ const storageReady = Promise.all(state.files.map(async (file) => {
 
 function saveState() {
   fs.mkdirSync(dataRoot, { recursive: true });
-  fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+  const temporaryPath = `${statePath}.${process.pid}.${randomUUID()}.tmp`;
+  const serializedState = JSON.stringify(state, null, 2);
+  const descriptor = fs.openSync(temporaryPath, 'w');
+  try {
+    fs.writeFileSync(descriptor, serializedState, 'utf8');
+    fs.fsyncSync(descriptor);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  if (fs.existsSync(statePath)) fs.copyFileSync(statePath, stateBackupPath);
+  fs.renameSync(temporaryPath, statePath);
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {

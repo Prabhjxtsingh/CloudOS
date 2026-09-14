@@ -58,8 +58,9 @@ Add:
 - [x] configurable Trash retention and background cleanup
 - [x] high-entropy share tokens and public-share rate limiting
 - [x] request body and file-name validation limits
+- [x] crash-safe atomic metadata snapshots with recovery backup
 
-Status: in progress. Metadata remains in a local JSON store while file contents use a selectable local or S3-compatible provider. The next Phase 3 increment is durable metadata storage beyond the local JSON state file.
+Status: in progress. Metadata remains in a crash-safe local JSON store while file contents use a selectable local or S3-compatible provider. The next Phase 3 increment is a transactional database for multi-instance concurrency.
 
 Realtime foundation: the browser subscribes to server-sent events, so file creation, file edits, settings changes, and session changes are broadcast to connected CloudOS clients immediately.
 
