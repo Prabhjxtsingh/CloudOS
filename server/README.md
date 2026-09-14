@@ -59,6 +59,8 @@ Set `CLOUDOS_AUTH_SECRET` to a long random value outside local development. Sess
 
 Authentication is rate limited in memory: five login attempts per IP per minute and 120 authenticated API requests per IP/user per minute. For multi-instance deployment, move these limits to a shared store such as Redis.
 
+Public share reads and edits are limited to 60 requests per IP per minute. Share tokens use 256 bits of random entropy, and JSON request bodies are capped at 5 MB. File names cannot contain path separators, null bytes, or traversal names.
+
 S3-compatible storage is available with the following settings:
 
 ```text

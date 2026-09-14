@@ -18,6 +18,8 @@ const sessionTtlSeconds = Math.max(300, Number(process.env.CLOUDOS_SESSION_TTL_S
 const rateLimitWindowMs = 60_000;
 const loginLimit = 5;
 const apiLimit = 120;
+const shareLimit = 60;
+const maxBodyBytes = 5 * 1024 * 1024;
 const rateBuckets = new Map();
 const eventClients = new Set();
 const defaultState = {
@@ -183,14 +185,32 @@ function broadcast(type, payload) {
 
 function readBody(request, callback) {
   let body = '';
-  request.on('data', (chunk) => { body += chunk; });
+  let size = 0;
+  let rejected = false;
+  request.on('data', (chunk) => {
+    size += chunk.length;
+    if (size > maxBodyBytes) {
+      rejected = true;
+      request.destroy();
+      callback(new Error('Request body exceeds the 5 MB limit'));
+      return;
+    }
+    body += chunk;
+  });
   request.on('end', () => {
+    if (rejected) return;
     try {
       callback(null, JSON.parse(body || '{}'));
     } catch {
       callback(new Error('Invalid JSON payload'));
     }
   });
+}
+
+function validateFileName(value) {
+  const name = String(value || '').trim();
+  if (!name || name.length > 255 || name === '.' || name === '..' || /[\\/\0]/.test(name)) return null;
+  return name;
 }
 
 function findFile(fileId) {
@@ -271,6 +291,11 @@ const server = http.createServer(async (request, response) => {
   }
 
   const publicShareRequest = requestUrl.pathname.match(/^\/api\/shares\/[^/]+$/) && request.method !== 'DELETE';
+  if (publicShareRequest && isRateLimited(`share:${clientAddress(request)}`, shareLimit)) {
+    response.setHeader('Retry-After', '60');
+    sendJson(response, 429, { error: 'Too many share requests. Try again later.' });
+    return;
+  }
   if (requestUrl.pathname.startsWith('/api/') && !publicShareRequest) {
     request.user = authenticatedUser(request);
     if (!request.user) {
@@ -432,7 +457,7 @@ const server = http.createServer(async (request, response) => {
     if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
     readBody(request, async (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
-      const share = { id: randomUUID(), token: randomUUID().replace(/-/g, '').slice(0, 12), fileId: file.id, permission: payload.permission === 'edit' ? 'edit' : 'view', createdAt: new Date().toISOString(), expiresAt: payload.expiresAt || null, revokedAt: null };
+      const share = { id: randomUUID(), token: crypto.randomBytes(32).toString('base64url'), fileId: file.id, permission: payload.permission === 'edit' ? 'edit' : 'view', createdAt: new Date().toISOString(), expiresAt: payload.expiresAt || null, revokedAt: null };
       state.shares.push(share);
       recordAudit('Share link created', 'demo@cloudos.local', file.name);
       saveState();
@@ -485,7 +510,7 @@ const server = http.createServer(async (request, response) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       const file = findFile(fileMatch[1]);
       if (!file) { sendJson(response, 404, { error: 'File not found' }); return; }
-      const nextName = String(payload.name || '').trim();
+      const nextName = validateFileName(payload.name);
       if (!nextName) { sendJson(response, 400, { error: 'A file name is required' }); return; }
       file.name = nextName;
       file.updated = 'Just now';
@@ -556,7 +581,7 @@ const server = http.createServer(async (request, response) => {
         const file = {
           id: randomUUID(),
           objectKey: randomUUID(),
-          name: String(payload.name || 'Untitled.txt'),
+          name: validateFileName(payload.name || 'Untitled.txt'),
           type: payload.type === 'folder' ? 'folder' : 'text',
           parentId: payload.parentId || null,
           size: payload.content ? `${Math.max(1, Math.ceil(Buffer.byteLength(String(payload.content)) / 1024))} KB` : '--',
@@ -564,6 +589,7 @@ const server = http.createServer(async (request, response) => {
           content: String(payload.content || ''),
           versions: []
         };
+        if (!file.name) throw new Error('A valid file name is required');
         await writeObjectContent(file, file.content);
         state.files.unshift(file);
         saveState();
