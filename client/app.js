@@ -117,7 +117,7 @@ function appContent(appName, windowId) {
   if (appName === 'terminal') return `<div class="terminal-output" id="terminal-output-${windowId}"><p>CloudOS Terminal <span>v0.1 local</span></p><p>Type <strong>help</strong> to see available commands.</p></div><form class="terminal-form" data-window="${windowId}"><span>dev@cloudos:~$</span><input type="text" autocomplete="off" aria-label="Terminal command"><button type="submit" aria-label="Run command">↵</button></form>`;
   if (appName === 'editor') return `<div class="editor-toolbar"><span class="editor-file-name">Loading file...</span><button type="button" class="text-button editor-save" data-window="${windowId}">Save note</button></div><textarea class="editor-input" id="editor-input-${windowId}" aria-label="Text editor">Loading file...</textarea>`;
   if (appName === 'settings') return '<div class="window-settings"><label>Workspace name<input class="settings-workspace-name" value="Dev workspace"></label><label>Appearance<select class="settings-theme"><option value="light">Day mode</option><option value="dark">Night mode</option></select></label><label>Session persistence<input class="settings-persistence" type="checkbox" checked></label><label>Notifications<input class="settings-notifications" type="checkbox" checked></label><button class="secondary-button window-action" type="button">Apply changes</button></div>';
-  return `<div class="window-file-list">${largeFileList.innerHTML || '<p class="window-empty">Loading workspace files...</p>'}</div>`;
+  return '<div class="window-file-list"><p class="window-empty">Loading workspace files...</p></div>';
 }
 
 function openApp(appName) {
@@ -152,7 +152,10 @@ function openApp(appName) {
   if (appName === 'terminal') bindTerminal(appWindow);
   if (appName === 'editor') bindEditor(appWindow);
   if (appName === 'settings') bindSettings(appWindow);
-  if (appName === 'files') bindFileWindow(appWindow);
+  if (appName === 'files') {
+    bindFileWindow(appWindow);
+    loadFiles();
+  }
 }
 
 function closeAppWindow(appWindow) {
