@@ -78,6 +78,7 @@ Business MVP foundation:
 - [x] password authentication and signed sessions
 - [x] authenticated API route protection
 - [x] owner/admin role enforcement for organization administration
+- [x] login and authenticated API rate limiting
 - [ ] MFA
 - [ ] organization-level storage permissions
 - [ ] application policy management

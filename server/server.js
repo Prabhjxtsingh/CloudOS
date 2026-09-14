@@ -15,6 +15,10 @@ const trashRetentionDays = Math.max(1, Number(process.env.CLOUDOS_TRASH_RETENTIO
 const cleanupIntervalMs = Math.max(60_000, Number(process.env.CLOUDOS_CLEANUP_INTERVAL_MS || 3_600_000));
 const authSecret = process.env.CLOUDOS_AUTH_SECRET || 'cloudos-local-development-secret';
 const sessionTtlSeconds = Math.max(300, Number(process.env.CLOUDOS_SESSION_TTL_SECONDS || 86_400));
+const rateLimitWindowMs = 60_000;
+const loginLimit = 5;
+const apiLimit = 120;
+const rateBuckets = new Map();
 const eventClients = new Set();
 const defaultState = {
   users: [
@@ -117,6 +121,21 @@ function requireRole(request, response, roles) {
     return false;
   }
   return true;
+}
+
+function clientAddress(request) {
+  return request.socket.remoteAddress || 'unknown';
+}
+
+function isRateLimited(key, limit) {
+  const now = Date.now();
+  const bucket = rateBuckets.get(key);
+  if (!bucket || now - bucket.startedAt >= rateLimitWindowMs) {
+    rateBuckets.set(key, { startedAt: now, count: 1 });
+    return false;
+  }
+  bucket.count += 1;
+  return bucket.count > limit;
 }
 
 function objectPath(file) {
@@ -223,6 +242,11 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === 'POST' && requestUrl.pathname === '/api/auth/login') {
+    if (isRateLimited(`login:${clientAddress(request)}`, loginLimit)) {
+      response.setHeader('Retry-After', '60');
+      sendJson(response, 429, { error: 'Too many login attempts. Try again later.' });
+      return;
+    }
     readBody(request, (error, payload) => {
       if (error) { sendJson(response, 400, { error: error.message }); return; }
       const email = String(payload.email || '').trim().toLowerCase();
@@ -251,6 +275,11 @@ const server = http.createServer(async (request, response) => {
     request.user = authenticatedUser(request);
     if (!request.user) {
       sendJson(response, 401, { error: 'Authentication required' });
+      return;
+    }
+    if (isRateLimited(`api:${clientAddress(request)}:${request.user.email}`, apiLimit)) {
+      response.setHeader('Retry-After', '60');
+      sendJson(response, 429, { error: 'Too many requests. Try again later.' });
       return;
     }
   }

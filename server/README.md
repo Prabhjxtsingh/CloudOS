@@ -57,6 +57,8 @@ Password: demo
 
 Set `CLOUDOS_AUTH_SECRET` to a long random value outside local development. Sessions expire according to `CLOUDOS_SESSION_TTL_SECONDS` (one day by default). The organization and admin endpoints require an owner or admin role.
 
+Authentication is rate limited in memory: five login attempts per IP per minute and 120 authenticated API requests per IP/user per minute. For multi-instance deployment, move these limits to a shared store such as Redis.
+
 S3-compatible storage is available with the following settings:
 
 ```text
