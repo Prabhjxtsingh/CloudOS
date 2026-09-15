@@ -122,7 +122,7 @@ The local prototype now includes a Phase 2 web desktop shell, Phase 3 persistenc
 
 ## Run locally
 
-Requirements: Node.js 18 or newer.
+Requirements: Node.js 22.5 or newer.
 
 ```bash
 npm start

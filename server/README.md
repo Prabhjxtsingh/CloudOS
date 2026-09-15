@@ -44,9 +44,9 @@ File contents are accessed through `server/storage.js` rather than directly from
 CLOUDOS_STORAGE_PROVIDER=local
 ```
 
-The metadata remains in `data/cloudos-state.json`, while content blobs live under `data/objects/`. A production S3-compatible adapter can now be added behind the same provider contract without changing the Files API.
+The metadata is stored transactionally in `data/cloudos.sqlite`, while content blobs live under `data/objects/`. On first startup, SQLite imports the existing `data/cloudos-state.json` or `.bak` snapshot. The JSON files remain available as migration inputs, but runtime metadata reads and writes use SQLite WAL mode and full synchronous commits.
 
-Metadata writes use a flushed temporary file followed by an atomic rename. The previous state is retained at `data/cloudos-state.json.bak`, and startup falls back to that backup if the primary file is missing or invalid. This protects the local prototype from partial writes; a multi-instance deployment still needs a transactional database.
+The SQLite metadata store uses a transaction for every state update and WAL mode for crash recovery. It is suitable for a single CloudOS server process; a multi-instance deployment should move the same metadata contract to PostgreSQL.
 
 ## Authentication
 

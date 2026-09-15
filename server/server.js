@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { randomUUID } = crypto;
 const { createStorage } = require('./storage');
+const { createMetadataStore } = require('./metadata');
 
 const clientRoot = path.join(__dirname, '..', 'client');
 const dataRoot = path.join(__dirname, '..', 'data');
@@ -46,18 +47,8 @@ const defaultState = {
   ]
 };
 
-function loadState() {
-  for (const candidate of [statePath, stateBackupPath]) {
-    try {
-      return JSON.parse(fs.readFileSync(candidate, 'utf8'));
-    } catch {
-      // Try the backup when the primary state file is missing or incomplete.
-    }
-  }
-  return structuredClone(defaultState);
-}
-
-let state = loadState();
+const metadata = createMetadataStore({ dataRoot, statePath, stateBackupPath, defaultState });
+let state = metadata.load();
 state.users = Array.isArray(state.users) && state.users.length ? state.users : structuredClone(defaultState.users);
 state.sessions = Array.isArray(state.sessions) ? state.sessions : [];
 state.settings = { ...defaultState.settings, ...(state.settings || {}) };
@@ -71,18 +62,7 @@ const storageReady = Promise.all(state.files.map(async (file) => {
 }));
 
 function saveState() {
-  fs.mkdirSync(dataRoot, { recursive: true });
-  const temporaryPath = `${statePath}.${process.pid}.${randomUUID()}.tmp`;
-  const serializedState = JSON.stringify(state, null, 2);
-  const descriptor = fs.openSync(temporaryPath, 'w');
-  try {
-    fs.writeFileSync(descriptor, serializedState, 'utf8');
-    fs.fsyncSync(descriptor);
-  } finally {
-    fs.closeSync(descriptor);
-  }
-  if (fs.existsSync(statePath)) fs.copyFileSync(statePath, stateBackupPath);
-  fs.renameSync(temporaryPath, statePath);
+  metadata.save(state);
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {

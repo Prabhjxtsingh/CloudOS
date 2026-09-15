@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "A browser-first foundation for a server-hosted operating system.",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "start": "node server/server.js"
   },
